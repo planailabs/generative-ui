@@ -2,3 +2,6 @@
 result
 result-*
 .direnv
+
+# runtime backflow events never belong in the committed demo
+artifacts/**/events/
