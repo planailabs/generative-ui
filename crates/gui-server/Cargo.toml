@@ -18,6 +18,12 @@ gui-schema.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
+axum.workspace = true
+tokio.workspace = true
+arc-swap.workspace = true
+mime_guess.workspace = true
+clap.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+reqwest.workspace = true

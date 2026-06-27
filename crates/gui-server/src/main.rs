@@ -1,32 +1,36 @@
-//! `gui-server` binary. Stage 2: scan the artifacts dir and print the index.
-//! Stage 3 replaces this with the axum HTTP server.
+//! `gui-server` binary: scan an artifacts directory and serve its surfaces over HTTP.
 
-use std::path::Path;
+use std::path::PathBuf;
 
-fn main() {
-    let root = std::env::args().nth(1).unwrap_or_else(|| "artifacts".to_string());
-    let idx = gui_server::Index::build(Path::new(&root));
+use clap::Parser;
+use gui_server::AppState;
 
+#[derive(Parser)]
+#[command(name = "gui-server", about = "Serve agent-published UI surfaces from a directory.")]
+struct Cli {
+    /// Directory of artifacts to discover and serve.
+    #[arg(long, default_value = "artifacts")]
+    artifacts: PathBuf,
+    /// Address to bind.
+    #[arg(long, default_value = "127.0.0.1:8080")]
+    addr: String,
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+    let state = AppState::new(cli.artifacts.clone());
+
+    let idx = state.index.load_full();
     for w in &idx.warnings {
         eprintln!("warning: {w}");
     }
-    println!(
-        "discovered {} agent(s), {} surface(s) under {root}",
+    eprintln!(
+        "discovered {} agent(s), {} surface(s) under {}",
         idx.agents.len(),
-        idx.surface_count()
+        idx.surface_count(),
+        cli.artifacts.display()
     );
-    for agent in idx.agents.values() {
-        for deck in agent.decks.values() {
-            for surface in deck.surfaces.values() {
-                println!(
-                    "  {}/{}/{}  live=v{} ({} version(s))",
-                    agent.slug,
-                    deck.slug,
-                    surface.path.surface,
-                    surface.live().version,
-                    surface.versions.len()
-                );
-            }
-        }
-    }
+
+    gui_server::serve(&cli.addr, state).await
 }
