@@ -1,0 +1,25 @@
+[package]
+name = "example-agent"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Example agent: publishes a navigable demo deck and waits for backflow — closing the loop through the directory with no API."
+
+[lib]
+name = "example_agent"
+path = "src/lib.rs"
+
+[[bin]]
+name = "example-agent"
+path = "src/main.rs"
+
+[dependencies]
+gui-agent.workspace = true
+gui-schema.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+gui-server.workspace = true

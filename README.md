@@ -40,6 +40,32 @@ Build a single binary without the shell:
 nix build .#gui-server && ./result/bin/gui-server --artifacts ./artifacts
 ```
 
+## Verify the loop end to end
+
+```sh
+nix develop                                   # pinned Rust + node dev shell
+cargo test                                    # all crates
+node --test suite/*.test.js                   # JS runtime helpers
+
+# Serve the committed demo deck and open it:
+cargo run -p gui-server -- --artifacts ./artifacts
+#   http://localhost:8080/            inspector (live)
+#   http://localhost:8080/demo/sales/ real interactive HTML; nav to region-detail/settings
+
+# Drive the loop from an agent (in another shell, same artifacts dir):
+cargo run -p example-agent -- --artifacts ./artifacts wait sales   # blocks
+# …click "Refresh" in the browser → an event file lands in
+#   artifacts/demo/main/sales/events/ and the agent prints it.
+
+# Or without a browser, via the CLI:
+cargo run -p gui-cli -- --artifacts ./artifacts backflow emit demo sales --action refresh
+cargo run -p gui-cli -- --artifacts ./artifacts index
+```
+
+The MCP server (`cargo run -p gui-mcp -- --artifacts ./artifacts`) exposes the same
+authoring/awaiting flow to any MCP-speaking agent (`publish_surface`, `define_deck`,
+`wait_for_backflow`, …).
+
 ## Crates
 
 | Crate | Role |

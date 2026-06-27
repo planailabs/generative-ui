@@ -1,0 +1,11 @@
+{
+  "schema_version": "generative-ui/surface.v1",
+  "title": "Sales",
+  "alt_text": "Sales overview with a refresh action",
+  "created_at": "2026-06-27T10:00:00Z",
+  "backflow": { "actions": ["refresh"] },
+  "nav": [
+    { "to": "region-detail", "label": "Regions" },
+    { "to": "settings", "label": "Settings" }
+  ]
+}
