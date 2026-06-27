@@ -36,16 +36,15 @@ Repeat 3–4 for a conversation conducted entirely through the UI.
   "surface": "ask-name",
   "title": "What should I call you?",
   "alt_text": "A form asking for the user's name",
-  "components": [
-    { "type": "heading", "text": "What should I call you?" },
-    { "type": "form", "action": "submit_name", "children": [
-      { "type": "input", "name": "name", "label": "Your name", "placeholder": "Ada" }
-    ]}
-  ]
+  "html": "<ui-heading level=\"1\">What should I call you?</ui-heading><ui-form data-action=\"submit_name\"><ui-input name=\"name\" label=\"Your name\" placeholder=\"Ada\"></ui-input></ui-form>"
 }
 ```
 
-- Provide `components` (a tree — call `component_help` for every node type) **or** `html`.
+- Provide `html`: the surface body written with the `<ui-*>` components — call
+  `component_help` for the full element reference.
+- You may also write ordinary HTML (`<h1>`, `<p>`, `<button>`, `<form>`, `<select>`,
+  `<a data-to="slug">`); it is **live-rewritten** into the matching `<ui-*>` components in the
+  browser. Prefer the `<ui-*>` components directly; the plain-HTML translation is a convenience.
 - `nav: [{ "to": "other-surface", "label": "..." }]` links surfaces into a navigable deck.
 - Republishing the same `surface` supersedes the old version (history is kept).
 

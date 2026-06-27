@@ -8,7 +8,7 @@
 use std::time::Duration;
 
 use gui_agent::{SurfaceBuilder, Workspace};
-use gui_schema::{Component, DeckManifest, SurfacePath, DEFAULT_DECK};
+use gui_schema::{DeckManifest, SurfacePath, DEFAULT_DECK};
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{CallToolResult, Content, ServerCapabilities, ServerInfo},
@@ -49,11 +49,10 @@ pub struct PublishParams {
     pub title: String,
     /// Accessibility text describing the surface.
     pub alt_text: String,
-    /// A component tree as a JSON **string**: a JSON array of `{ "type": "...", ... }`
-    /// objects (see `component_help`). A string keeps the tool schema strict-compatible.
-    pub components_json: Option<String>,
-    /// Raw HTML body instead of a component tree (escape hatch).
-    pub html: Option<String>,
+    /// The surface body as HTML. Use the `<ui-*>` components (call `component_help`); plain
+    /// HTML elements (`button`, `h1`-`h3`, `p`, `form`, `select`, `a[data-to]`) are
+    /// live-rewritten into the equivalent components in the browser.
+    pub html: String,
     /// Navigation edges to sibling surfaces.
     pub nav: Option<Vec<NavParam>>,
     /// Free-form metadata as a JSON **string** (a JSON object).
@@ -127,7 +126,7 @@ impl GuiServer {
     }
 
     #[tool(
-        description = "Publish a new version of a UI surface (latest-wins). Provide `components` (a JSON array of <ui-*> nodes) or `html`. Call `component_help` for the component reference."
+        description = "Publish a new version of a UI surface (latest-wins). Provide `html`: the surface body written with the <ui-*> components (call `component_help` first). You may also write plain HTML (button, h1-h3, p, form, select, a[data-to]); it is live-rewritten into the equivalent components in the browser."
     )]
     pub async fn publish_surface(
         &self,
@@ -135,14 +134,7 @@ impl GuiServer {
     ) -> Result<CallToolResult, ErrorData> {
         let path = surface_path(&p.agent, &p.deck, &p.surface)?;
         tracing::info!(surface = %path.id(), "tool: publish_surface");
-        let mut b = SurfaceBuilder::new(p.title, p.alt_text);
-        if let Some(html) = p.html {
-            b = b.html(html);
-        } else if let Some(components) = p.components_json {
-            let comps: Vec<Component> = serde_json::from_str(&components)
-                .map_err(|e| invalid(format!("invalid components_json: {e}")))?;
-            b = b.components(comps);
-        }
+        let mut b = SurfaceBuilder::new(p.title, p.alt_text).html(p.html);
         for edge in p.nav.unwrap_or_default() {
             b = b.nav(edge.to, edge.label.as_deref());
         }

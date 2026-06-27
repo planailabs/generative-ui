@@ -25,11 +25,7 @@ async fn publish_and_define_deck_write_the_directory() {
         surface: "sales".into(),
         title: "Sales".into(),
         alt_text: "Revenue".into(),
-        components_json: Some(serde_json::json!([
-            { "type": "heading", "text": "Sales" },
-            { "type": "button", "label": "Refresh", "action": "refresh" }
-        ]).to_string()),
-        html: None,
+        html: "<ui-heading level=\"1\">Sales</ui-heading><ui-button data-action=\"refresh\">Refresh</ui-button>".into(),
         nav: Some(vec![gui_mcp::NavParam { to: "settings".into(), label: Some("Settings".into()) }]),
         metadata_json: None,
     }))
@@ -79,8 +75,7 @@ async fn wait_for_backflow_returns_a_written_event() {
         surface: "sales".into(),
         title: "Sales".into(),
         alt_text: "alt".into(),
-        components_json: Some(serde_json::json!([{ "type": "text", "text": "hi" }]).to_string()),
-        html: None,
+        html: "<ui-text>hi</ui-text>".into(),
         nav: None,
         metadata_json: None,
     }))

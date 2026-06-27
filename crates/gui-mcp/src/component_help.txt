@@ -1,23 +1,24 @@
-Generative UI components — pass `components_json` to publish_surface as a JSON **string**
-containing an array of nodes, each `{ "type": "<name>", ...fields }`. Nesting uses a
-`children` array. (It is a string, e.g. "[{\"type\":\"heading\",\"text\":\"Hi\"}]".)
+Generative UI components — write the surface as an HTML string for publish_surface's `html`
+field, composing these `<ui-*>` elements:
 
-heading   { "type": "heading", "text": "...", "level": 1-3 (default 2) }
-text      { "type": "text", "text": "..." }
-button    { "type": "button", "label": "...", "action": "act", "value": <any> }
-            Clicking sends a backflow event with this action and value.
-input     { "type": "input", "name": "field", "label": "...", "placeholder": "...", "input_type": "text|email|number|..." }
-select    { "type": "select", "name": "field", "label": "...",
-            "options": [ { "value": "v", "label": "V" }, ... ] }
-checkbox  { "type": "checkbox", "name": "field", "label": "...", "checked": false }
-card      { "type": "card", "children": [ ...nodes... ] }
-form      { "type": "form", "action": "submit_act", "children": [ ...inputs... ] }
-            Renders a submit button; submitting sends one backflow event whose value is an
-            object of all child input names → values.
-link      { "type": "link", "to": "surface-slug", "label": "..." }
-            Navigates to a sibling surface in the same deck.
-deck-nav  { "type": "deck-nav" }   Prev/next navigation chrome for the deck.
-html      { "type": "html", "html": "<raw/>" }   Raw HTML escape hatch.
+<ui-heading level="1-3">Title</ui-heading>
+<ui-text>Body copy.</ui-text>
+<ui-card> ...elements... </ui-card>
+<ui-button data-action="act" data-value='{"any":"json"}'>Label</ui-button>
+    Clicking sends a backflow event with this action and value.
+<ui-input name="field" label="..." placeholder="..." type="text|email|number|...">
+<ui-select name="field" label="..."><option value="v">V</option>...</ui-select>
+<ui-checkbox name="field" checked>Label</ui-checkbox>
+<ui-form data-action="submit_act"> ...inputs... </ui-form>
+    Submitting sends one backflow event whose value is { field: value, ... } for all named
+    inputs. A submit button is added automatically if you don't include one.
+<ui-link to="surface-slug">Label</ui-link>   Navigates to a sibling surface in the deck.
+<ui-deck-nav></ui-deck-nav>                  Prev/next navigation chrome for the deck.
+
+Translation note: you may also write ordinary HTML — `<h1>`/`<h2>`/`<h3>`, `<p>`, `<button>`,
+`<form>`, `<select>`, and `<a data-to="slug">` are automatically rewritten into the matching
+`<ui-*>` components in the browser (so they get styling + backflow wiring). Prefer the `<ui-*>`
+components directly; the plain-HTML translation is a convenience.
 
 Interaction flows back via wait_for_backflow / list_backflow:
   - a button yields { action, value }

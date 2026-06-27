@@ -141,16 +141,26 @@ class UiForm extends HTMLElement {
     if (this._wired) return;
     this._wired = true;
     const action = this.getAttribute("data-action") || "";
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "ui-btn ui-submit";
-    btn.textContent = this.getAttribute("submit-label") || "Submit";
-    btn.addEventListener("click", () => {
+
+    // Submit on any button inside the form that isn't itself a backflow button.
+    this.addEventListener("click", (e) => {
+      const btn = e.target.closest("button, ui-button");
+      if (!btn || !this.contains(btn)) return;
+      if (btn.getAttribute("data-action")) return; // its own action handles it
+      e.preventDefault();
       const values = this.collect();
       this.dispatchEvent(new CustomEvent("ui-submit", { bubbles: true, detail: { action, values } }));
       sendBackflow(action, "ui-form", values);
     });
-    this.appendChild(btn);
+
+    // Provide a default submit button only if the author didn't include one.
+    if (!this.querySelector("button, ui-button")) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ui-btn ui-submit";
+      btn.textContent = this.getAttribute("submit-label") || "Submit";
+      this.appendChild(btn);
+    }
   }
 
   collect() {
@@ -220,6 +230,55 @@ customElements.define("ui-form", UiForm);
 customElements.define("ui-link", UiLink);
 customElements.define("ui-deck-nav", UiDeckNav);
 customElements.define("ui-heading", UiHeading);
+
+// Live rewrite: translate ordinary HTML elements into the matching <ui-*> components, so an
+// author (or agent) can write plain HTML and still get styling + backflow wiring. Authors are
+// encouraged to use the <ui-*> components directly; this is a convenience translation.
+function upgrade(el, tag, setup) {
+  const ne = document.createElement(tag);
+  for (const attr of el.attributes) ne.setAttribute(attr.name, attr.value);
+  while (el.firstChild) ne.appendChild(el.firstChild);
+  if (setup) setup(el, ne);
+  el.replaceWith(ne);
+}
+
+function rewritePlainHtml(root) {
+  // Snapshot first: replaced nodes move (not removed), so the list stays valid.
+  root.querySelectorAll("h1, h2, h3, p, button, form, select").forEach((el) => {
+    switch (el.tagName) {
+      case "H1":
+        upgrade(el, "ui-heading", (_o, n) => n.setAttribute("level", "1"));
+        break;
+      case "H2":
+        upgrade(el, "ui-heading", (_o, n) => n.setAttribute("level", "2"));
+        break;
+      case "H3":
+        upgrade(el, "ui-heading", (_o, n) => n.setAttribute("level", "3"));
+        break;
+      case "P":
+        upgrade(el, "ui-text");
+        break;
+      case "BUTTON":
+        upgrade(el, "ui-button");
+        break;
+      case "SELECT":
+        upgrade(el, "ui-select");
+        break;
+      case "FORM":
+        upgrade(el, "ui-form", (o, n) => {
+          const a = o.getAttribute("action");
+          if (a && !n.hasAttribute("data-action")) n.setAttribute("data-action", a);
+        });
+        break;
+    }
+  });
+  // <a data-to="slug"> → <ui-link to="slug"> (plain <a href> links are left alone).
+  root.querySelectorAll("a[data-to]").forEach((el) =>
+    upgrade(el, "ui-link", (o, n) => n.setAttribute("to", o.getAttribute("data-to"))),
+  );
+}
+
+rewritePlainHtml(document.body);
 
 // Streamable views: re-render in realtime when *this* surface gets a new version (e.g. an
 // agent regenerates it in response to backflow). Reloads only on a version change, not on
