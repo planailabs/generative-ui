@@ -1,0 +1,16 @@
+[package]
+name = "gui-agent"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Agent-facing API for the Generative UI Suite: publish surfaces, define decks, and read/wait on backflow — all via the directory."
+
+[dependencies]
+gui-schema.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+notify.workspace = true
+time.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
