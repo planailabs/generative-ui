@@ -4,7 +4,7 @@
 // and resolves <ui-link>/<ui-deck-nav> navigation. The artifact's HTML is real, interactive
 // DOM — not a picture.
 
-import { backflowPayload, backflowUrl, navTargets, surfaceUrl } from "./lib.js";
+import { backflowPayload, backflowUrl, navTargets, needsReload, surfaceUrl, versionsUrl } from "./lib.js";
 
 // --- surface context, injected by the server into the document head ---
 const ctx = (() => {
@@ -220,5 +220,33 @@ customElements.define("ui-form", UiForm);
 customElements.define("ui-link", UiLink);
 customElements.define("ui-deck-nav", UiDeckNav);
 customElements.define("ui-heading", UiHeading);
+
+// Streamable views: re-render in realtime when *this* surface gets a new version (e.g. an
+// agent regenerates it in response to backflow). Reloads only on a version change, not on
+// backflow events, so a user's own click never reloads the page under them.
+async function liveVersion() {
+  try {
+    const res = await fetch(versionsUrl(ctx.surface));
+    if (!res.ok) return null;
+    return (await res.json()).live ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function subscribeReload() {
+  if (!ctx.surface) return;
+  try {
+    const es = new EventSource("/events");
+    // On any change, check whether *this* surface has a newer live version and reload if so.
+    // A backflow event never bumps the version, so the user's own click won't reload them.
+    es.onmessage = async () => {
+      if (needsReload(ctx.version, await liveVersion())) location.reload();
+    };
+  } catch {
+    /* SSE unavailable — the surface still works, just not live */
+  }
+}
+subscribeReload();
 
 export { ctx, sendBackflow };

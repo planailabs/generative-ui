@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { backflowPayload, surfaceUrl, backflowUrl, navTargets } from "./lib.js";
+import { backflowPayload, surfaceUrl, backflowUrl, navTargets, needsReload, versionsUrl } from "./lib.js";
 
 test("backflowPayload normalizes nullables", () => {
   assert.deepEqual(backflowPayload("buy", "ui-button", { id: 1 }, "100", "t"), {
@@ -26,6 +26,14 @@ test("backflowPayload normalizes nullables", () => {
 test("surfaceUrl / backflowUrl", () => {
   assert.equal(surfaceUrl("demo", "main", "sales"), "/demo/main/sales/");
   assert.equal(backflowUrl("demo/main/sales"), "/backflow/demo/main/sales");
+});
+
+test("needsReload only when the live version differs", () => {
+  assert.equal(needsReload("1", "2"), true, "republished → reload");
+  assert.equal(needsReload("1", "1"), false, "same version (e.g. a backflow event) → no reload");
+  assert.equal(needsReload("1", null), false);
+  assert.equal(needsReload(null, "2"), false);
+  assert.equal(versionsUrl("demo/main/sales"), "/api/demo/main/sales/versions.json");
 });
 
 test("navTargets resolves prev/next", () => {

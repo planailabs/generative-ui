@@ -21,6 +21,16 @@ export function backflowUrl(surfaceId) {
   return `/backflow/${surfaceId}`;
 }
 
+/** Versions API URL for a surface id of the form `agent/deck/surface`. */
+export function versionsUrl(surfaceId) {
+  return `/api/${surfaceId}/versions.json`;
+}
+
+/** Should a surface reload? True only when a different live version has been published. */
+export function needsReload(currentVersion, liveVersion) {
+  return Boolean(liveVersion) && Boolean(currentVersion) && liveVersion !== currentVersion;
+}
+
 /** Previous/next surface slugs for deck navigation. */
 export function navTargets(order, current) {
   const list = Array.isArray(order) ? order : [];

@@ -73,6 +73,9 @@ pub fn spawn_watcher(state: AppState) -> notify::Result<notify::RecommendedWatch
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         if res.is_ok() {
             st.reload();
+            // A simple ping; clients decide what to refetch. Surface views compare the live
+            // version (robust against fs-watch races and ignores backflow, which never bumps
+            // the version); the inspector just reloads.
             st.notify("{\"type\":\"changed\"}");
         }
     })?;
