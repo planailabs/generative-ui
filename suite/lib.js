@@ -26,6 +26,23 @@ export function versionsUrl(surfaceId) {
   return `/api/${surfaceId}/versions.json`;
 }
 
+/** KV view API URL for a surface id of the form `agent/deck/surface`. */
+export function kvUrl(surfaceId) {
+  return `/api/${surfaceId}/kv.json`;
+}
+
+/** Resolve a (optionally dotted) key against the KV object; `undefined` if absent. */
+export function kvValue(kv, key) {
+  if (!kv || !key) return undefined;
+  return String(key).split(".").reduce((o, k) => (o == null ? undefined : o[k]), kv);
+}
+
+/** Render a KV value for display in a bound element: objects as JSON, nullish as "". */
+export function kvDisplay(value) {
+  if (value == null) return "";
+  return typeof value === "object" ? JSON.stringify(value) : String(value);
+}
+
 /** Should a surface reload? True only when a different live version has been published. */
 export function needsReload(currentVersion, liveVersion) {
   return Boolean(liveVersion) && Boolean(currentVersion) && liveVersion !== currentVersion;

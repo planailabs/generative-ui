@@ -4,7 +4,17 @@
 // and resolves <ui-link>/<ui-deck-nav> navigation. The artifact's HTML is real, interactive
 // DOM — not a picture.
 
-import { backflowPayload, backflowUrl, navTargets, needsReload, surfaceUrl, versionsUrl } from "./lib.js";
+import {
+  backflowPayload,
+  backflowUrl,
+  kvDisplay,
+  kvUrl,
+  kvValue,
+  navTargets,
+  needsReload,
+  surfaceUrl,
+  versionsUrl,
+} from "./lib.js";
 
 // --- surface context, injected by the server into the document head ---
 const ctx = (() => {
@@ -24,18 +34,43 @@ const ctx = (() => {
   return { surface, version, deck, agent, deckSlug, surfaceSlug };
 })();
 
-/** POST an interaction back into the surface's directory via the server. */
+/** POST an interaction back into the surface's directory via the server. Returns the parsed
+ *  response a handler defined (or null). A handler may have folded the KV view, so refresh
+ *  the bound nodes afterwards. */
 async function sendBackflow(action, component, value) {
-  if (!ctx.surface) return;
+  if (!ctx.surface) return null;
   const body = backflowPayload(action, component, value, ctx.version || null, new Date().toISOString());
   try {
-    await fetch(backflowUrl(ctx.surface), {
+    const res = await fetch(backflowUrl(ctx.surface), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
+    let payload = null;
+    if (res.headers.get("content-type")?.includes("application/json")) {
+      payload = await res.json().catch(() => null);
+    }
+    refreshKv(); // a sync handler may have updated the KV view
+    return payload;
   } catch (e) {
     console.error("backflow failed", e);
+    return null;
+  }
+}
+
+/** Fetch the surface's KV view and update every `[data-kv="key"]` element's text. */
+async function refreshKv() {
+  if (!ctx.surface) return;
+  if (!document.querySelector("[data-kv]")) return; // nothing bound — skip the fetch
+  try {
+    const res = await fetch(kvUrl(ctx.surface));
+    if (!res.ok) return;
+    const kv = await res.json();
+    document.querySelectorAll("[data-kv]").forEach((el) => {
+      el.textContent = kvDisplay(kvValue(kv, el.getAttribute("data-kv")));
+    });
+  } catch {
+    /* KV unavailable — bound nodes keep their server-rendered text */
   }
 }
 
@@ -303,12 +338,18 @@ function subscribeReload() {
     // On any change, check whether *this* surface has a newer live version and reload if so.
     // A backflow event never bumps the version, so the user's own click won't reload them.
     es.onmessage = async () => {
-      if (needsReload(ctx.version, await liveVersion())) location.reload();
+      if (needsReload(ctx.version, await liveVersion())) {
+        location.reload();
+        return;
+      }
+      // Not a republish — a handler may have folded new KV state; refresh bound nodes.
+      refreshKv();
     };
   } catch {
     /* SSE unavailable — the surface still works, just not live */
   }
 }
 subscribeReload();
+refreshKv(); // populate any [data-kv] bindings with the current KV view on load
 
 export { ctx, sendBackflow };

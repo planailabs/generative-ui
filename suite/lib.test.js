@@ -4,7 +4,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { backflowPayload, surfaceUrl, backflowUrl, navTargets, needsReload, versionsUrl } from "./lib.js";
+import {
+  backflowPayload,
+  surfaceUrl,
+  backflowUrl,
+  navTargets,
+  needsReload,
+  versionsUrl,
+  kvUrl,
+  kvValue,
+  kvDisplay,
+} from "./lib.js";
 
 test("backflowPayload normalizes nullables", () => {
   assert.deepEqual(backflowPayload("buy", "ui-button", { id: 1 }, "100", "t"), {
@@ -34,6 +44,21 @@ test("needsReload only when the live version differs", () => {
   assert.equal(needsReload("1", null), false);
   assert.equal(needsReload(null, "2"), false);
   assert.equal(versionsUrl("demo/main/sales"), "/api/demo/main/sales/versions.json");
+});
+
+test("kvUrl / kvValue / kvDisplay drive [data-kv] bindings", () => {
+  assert.equal(kvUrl("demo/main/sales"), "/api/demo/main/sales/kv.json");
+  const kv = { hits: 3, user: { name: "Ada" }, ready: false };
+  assert.equal(kvValue(kv, "hits"), 3);
+  assert.equal(kvValue(kv, "user.name"), "Ada"); // dotted path
+  assert.equal(kvValue(kv, "missing"), undefined);
+  assert.equal(kvValue(kv, "user.nope.deep"), undefined); // safe past a missing branch
+  assert.equal(kvValue(null, "x"), undefined);
+  // display: objects → JSON, nullish → "", primitives → String (incl. falsey)
+  assert.equal(kvDisplay(kvValue(kv, "hits")), "3");
+  assert.equal(kvDisplay(kvValue(kv, "user")), '{"name":"Ada"}');
+  assert.equal(kvDisplay(kvValue(kv, "missing")), "");
+  assert.equal(kvDisplay(kvValue(kv, "ready")), "false");
 });
 
 test("navTargets resolves prev/next", () => {
