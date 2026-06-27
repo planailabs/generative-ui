@@ -57,6 +57,11 @@ nix flake check             # cargo test + clippy as flake checks
 nix build .#gui-server      # build a single binary
 ```
 
+## Skills
+
+- [`.agents/skills/authoring-ui`](.agents/skills/authoring-ui/SKILL.md) — how an agent uses
+  the `gui-mcp` tools to show users interactive UI and react to their input.
+
 ## Hard rules
 
 - **No submission API.** Producers create artifacts by writing files in the schema above.
