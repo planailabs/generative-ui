@@ -301,6 +301,8 @@ fn cmd_emit(
         value,
         surface: path.id(),
         version: None,
+        scope: gui_schema::Scope::Public,
+        source: Some("cli".to_string()),
         received_at: iso,
     };
     let target = path.events_dir(root).join(event.file_name(ms));

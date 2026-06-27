@@ -28,6 +28,8 @@ fn event(action: &str, value: Value) -> Event {
         value,
         surface: "demo/main/s".into(),
         version: None,
+        scope: gui_schema::Scope::Public,
+        source: None,
         received_at: "t".into(),
     }
 }
@@ -52,7 +54,8 @@ fn run(
         capabilities: caps,
         limits,
     };
-    run_handler(&def, &vdir, &sdir, ev, kv)
+    // Seed the public KV; tests only exercise public scope.
+    run_handler(&def, &vdir, &sdir, ev, kv, Map::new())
 }
 
 /// A one-shot HTTP/1.1 stub returning `{"ok":true,"echo":<n>}`; returns its `127.0.0.1:port`.
@@ -132,8 +135,8 @@ fn assert_full_api(fx: &Fixture) {
         "http response body delivered to guest"
     );
     // kv folded + flagged dirty for persistence.
-    assert!(out.kv_changed);
-    assert_eq!(out.kv["hits"], json!(1));
+    assert!(out.public.changed);
+    assert_eq!(out.public.map["hits"], json!(1));
 }
 
 /// Folding accumulates across invocations (replay property): feeding the prior kv back in.
@@ -144,7 +147,7 @@ fn assert_fold_accumulates(fx: &Fixture) {
     for expected in 1..=3 {
         let out = run(fx, caps.clone(), Limits::default(), &ev, kv).unwrap();
         assert_eq!(out.response.body["hits"], json!(expected));
-        kv = out.kv;
+        kv = out.public.map;
     }
 }
 

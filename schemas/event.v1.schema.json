@@ -2,7 +2,17 @@
   "$id": "https://plan.ai/generative-ui/schemas/event.v1.schema.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
-  "description": "A backflow event, written by the server into `{surface}/events/{unix-ms}-{action}.json`.",
+  "definitions": {
+    "Scope": {
+      "description": "Visibility of KV entries and events. `public` is served over the HTTP API (the browser / rendered surface can read it); `private` is for the producing agent only and is never served on the public endpoints.",
+      "enum": [
+        "public",
+        "private"
+      ],
+      "type": "string"
+    }
+  },
+  "description": "A backflow/emitted event, written into `{surface}/events/{unix-ms}-{action}.json`. Created by a direct UI submission (backflow) or by a handler via `host.emit`. The agent reads them; `public` events are also served over the events API.",
   "properties": {
     "action": {
       "type": "string"
@@ -18,6 +28,21 @@
     },
     "schema_version": {
       "type": "string"
+    },
+    "scope": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/Scope"
+        }
+      ],
+      "description": "Visibility — `public` events are served on the events API; `private` are agent-only."
+    },
+    "source": {
+      "description": "`ui` for a direct submission, `handler` for a `host.emit` from a handler.",
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "surface": {
       "description": "`agent/deck/surface`.",

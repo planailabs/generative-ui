@@ -17,20 +17,28 @@ mod lua;
 mod wasm;
 
 pub use engine::{Engine, HandlerError, HandlerResponse, Invocation};
-pub use host::{Host, HostError, HttpRequest, HttpResponse, SharedHost};
+pub use host::{Emitted, Host, HostError, HttpRequest, HttpResponse, SharedHost};
 
 use std::path::Path;
 
-use gui_schema::{Event, HandlerDef, HandlerLang};
+use gui_schema::{Event, HandlerDef, HandlerLang, Scope};
 use serde_json::{Map, Value};
 
-/// The result of running one handler: the response to return, plus the (possibly mutated)
-/// KV view to persist.
+/// A KV view plus whether the handler mutated it (drives persistence).
+#[derive(Debug, Clone)]
+pub struct KvView {
+    pub map: Map<String, Value>,
+    pub changed: bool,
+}
+
+/// The result of running one handler: the response to return, the (possibly mutated) public
+/// and private KV views to persist, and any events the handler emitted.
 #[derive(Debug, Clone)]
 pub struct HandlerOutcome {
     pub response: HandlerResponse,
-    pub kv: Map<String, Value>,
-    pub kv_changed: bool,
+    pub public: KvView,
+    pub private: KvView,
+    pub emitted: Vec<Emitted>,
 }
 
 /// Pick the engine for a language, or report it unavailable if its feature is off.
@@ -48,15 +56,16 @@ pub fn engine_for(lang: HandlerLang) -> Result<Box<dyn Engine>, HandlerError> {
     }
 }
 
-/// Run `def`'s handler for `event`, starting from KV view `kv`. `version_dir` holds the
-/// entry file; `state_dir` is the fs jail and KV location. Returns the response and the
-/// resulting KV view (caller persists it when `kv_changed`).
+/// Run `def`'s handler for `event`, seeding the public and private KV views. `version_dir`
+/// holds the entry file; `state_dir` is the fs jail and KV location. Returns the response, the
+/// resulting KV views (caller persists each when `changed`), and any emitted events.
 pub fn run_handler(
     def: &HandlerDef,
     version_dir: &Path,
     state_dir: &Path,
     event: &Event,
-    kv: Map<String, Value>,
+    kv_public: Map<String, Value>,
+    kv_private: Map<String, Value>,
 ) -> Result<HandlerOutcome, HandlerError> {
     let entry = version_dir.join(&def.entry);
     let engine = engine_for(def.lang)?;
@@ -64,7 +73,8 @@ pub fn run_handler(
         state_dir.to_path_buf(),
         def.capabilities.clone(),
         def.limits,
-        kv,
+        kv_public,
+        kv_private,
     )
     .shared();
 
@@ -86,7 +96,14 @@ pub fn run_handler(
     };
     Ok(HandlerOutcome {
         response,
-        kv: h.kv().clone(),
-        kv_changed: h.kv_changed(),
+        public: KvView {
+            map: h.kv(Scope::Public).clone(),
+            changed: h.kv_changed(Scope::Public),
+        },
+        private: KvView {
+            map: h.kv(Scope::Private).clone(),
+            changed: h.kv_changed(Scope::Private),
+        },
+        emitted: h.emitted().to_vec(),
     })
 }

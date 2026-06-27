@@ -1,12 +1,9 @@
-//! The host: the single, capability-gated effect surface handed to every engine.
+//! The host: the single, capability-gated effect surface behind every engine.
 //!
-//! There is exactly one host implementation — the unified API the spec calls for lives here
-//! and is mirrored verbatim by each engine binding (WIT for WASM, a `host` global in JS, a
-//! `host` table in Lua). ponytail: a concrete struct, not a trait — one implementation, so a
-//! trait would be ceremony. Extract a trait the day a second host is real.
-//!
-//! Every method enforces the handler's [`Capabilities`] (default-deny) and [`Limits`]
-//! host-side, so the guarantees are identical regardless of guest language.
+//! There is exactly one host implementation and **one entry point** — [`Host::dispatch`].
+//! Every engine binds a single `__host_call(op, args_json) -> result_json` primitive to it and
+//! layers a thin per-language `host` facade on top; the routing, marshalling, capability
+//! checks (default-deny) and limits all live here once, so the three languages stay identical.
 
 use std::cell::RefCell;
 use std::io::Read;
@@ -14,7 +11,7 @@ use std::path::{Component, Path, PathBuf};
 use std::rc::Rc;
 use std::time::Duration;
 
-use gui_schema::{Capabilities, Limits};
+use gui_schema::{Capabilities, Limits, Scope};
 use serde_json::{Map, Value};
 
 /// Per-value KV ceiling (serialized bytes). ponytail: fixed cap; lift into `Limits` if a
@@ -30,6 +27,15 @@ pub enum HostError {
     Limit(String),
     #[error("{0}")]
     Other(String),
+}
+
+/// An event a handler asked to record via `host.emit` — the server writes it into the
+/// surface's `events/` dir so the agent (and, when public, the events API) sees it.
+#[derive(Debug, Clone)]
+pub struct Emitted {
+    pub name: String,
+    pub data: Value,
+    pub scope: Scope,
 }
 
 /// An outbound HTTP request a handler asked for.
@@ -68,6 +74,14 @@ impl HttpRequest {
     }
 }
 
+/// The response handed back to the guest.
+#[derive(Debug, Clone)]
+pub struct HttpResponse {
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: String,
+}
+
 impl HttpResponse {
     /// As a JSON object `{status, headers, body}` for handing back to the guest.
     pub fn to_json(&self) -> Value {
@@ -80,36 +94,8 @@ impl HttpResponse {
     }
 }
 
-/// The response handed back to the guest.
-#[derive(Debug, Clone)]
-pub struct HttpResponse {
-    pub status: u16,
-    pub headers: Vec<(String, String)>,
-    pub body: String,
-}
-
-/// The unified effect surface. Shared into each engine as `Rc<RefCell<Host>>` so the guest's
-/// host-function callbacks can mutate it; the caller reads the resulting KV back out after.
-pub struct Host {
-    /// Jail root for `fs.*` and the location of `kv.json`.
-    state_dir: PathBuf,
-    caps: Capabilities,
-    limits: Limits,
-    kv: Map<String, Value>,
-    kv_changed: bool,
-    http_calls: u32,
-    /// Explicit response set via `host.response(code, body)`; overrides the handler's return.
-    response: Option<(u16, Value)>,
-    /// Collected `log` lines (level, message) — also emitted via `tracing`.
-    logs: Vec<(String, String)>,
-}
-
 /// `NAME -> code` for every status the `http` crate knows, named in SCREAMING_SNAKE to match
 /// the crate's own constants (e.g. 404 → `NOT_FOUND`, 200 → `OK`, 418 → `IM_A_TEAPOT`).
-/// Drives `host.responseCode.*`; sourced from the `http` crate so the numbers are
-/// authoritative. Used by each engine binding (behind its feature); unused in the bare
-/// host-only build.
-#[allow(dead_code)]
 pub fn status_codes() -> Map<String, Value> {
     (100u16..=599)
         .filter_map(|n| {
@@ -132,16 +118,45 @@ fn screaming_snake(reason: &str) -> String {
 /// A host shared into an engine's guest callbacks.
 pub type SharedHost = Rc<RefCell<Host>>;
 
+/// The unified effect surface, shared into each engine as `Rc<RefCell<Host>>`. The caller
+/// reads the resulting KV/emitted-events back out after the run.
+pub struct Host {
+    /// Jail root for `fs.*` and the location of the KV files.
+    state_dir: PathBuf,
+    caps: Capabilities,
+    limits: Limits,
+    kv_public: Map<String, Value>,
+    kv_private: Map<String, Value>,
+    kv_public_dirty: bool,
+    kv_private_dirty: bool,
+    http_calls: u32,
+    /// Explicit response set via `host.response(code, body)`; overrides the handler's return.
+    response: Option<(u16, Value)>,
+    /// Events the handler asked to record (written by the server after the run).
+    emitted: Vec<Emitted>,
+    /// Collected `log` lines (level, message) — also emitted via `tracing`.
+    logs: Vec<(String, String)>,
+}
+
 impl Host {
-    pub fn new(state_dir: PathBuf, caps: Capabilities, limits: Limits, kv: Map<String, Value>) -> Self {
+    pub fn new(
+        state_dir: PathBuf,
+        caps: Capabilities,
+        limits: Limits,
+        kv_public: Map<String, Value>,
+        kv_private: Map<String, Value>,
+    ) -> Self {
         Self {
             state_dir,
             caps,
             limits,
-            kv,
-            kv_changed: false,
+            kv_public,
+            kv_private,
+            kv_public_dirty: false,
+            kv_private_dirty: false,
             http_calls: 0,
             response: None,
+            emitted: Vec::new(),
             logs: Vec::new(),
         }
     }
@@ -150,24 +165,24 @@ impl Host {
         Rc::new(RefCell::new(self))
     }
 
-    /// The current KV view and whether a handler mutated it (drives persistence).
-    pub fn kv(&self) -> &Map<String, Value> {
-        &self.kv
+    /// The current KV view for `scope` and whether a handler mutated it (drives persistence).
+    pub fn kv(&self, scope: Scope) -> &Map<String, Value> {
+        match scope {
+            Scope::Public => &self.kv_public,
+            Scope::Private => &self.kv_private,
+        }
     }
-    pub fn kv_changed(&self) -> bool {
-        self.kv_changed
+    pub fn kv_changed(&self, scope: Scope) -> bool {
+        match scope {
+            Scope::Public => self.kv_public_dirty,
+            Scope::Private => self.kv_private_dirty,
+        }
     }
-    pub fn into_kv(self) -> Map<String, Value> {
-        self.kv
+    pub fn emitted(&self) -> &[Emitted] {
+        &self.emitted
     }
     pub fn logs(&self) -> &[(String, String)] {
         &self.logs
-    }
-
-    /// Set the response explicitly (via `host.response(code, body)`); overrides the handler's
-    /// return value. Last call wins.
-    pub fn set_response(&mut self, status: u16, body: Value) {
-        self.response = Some((status, body));
     }
 
     /// The explicit response, if the handler called `host.response`.
@@ -175,14 +190,60 @@ impl Host {
         self.response.as_ref()
     }
 
-    // --- kv ---------------------------------------------------------------
-
-    pub fn kv_get(&self, key: &str) -> Result<Value, HostError> {
-        self.require_kv()?;
-        Ok(self.kv.get(key).cloned().unwrap_or(Value::Null))
+    /// The single entry point every engine calls. `op` selects the operation; `args` is a JSON
+    /// object of named parameters. Returns the JSON result (null for void ops).
+    pub fn dispatch(&mut self, op: &str, args: &Value) -> Result<Value, HostError> {
+        match op {
+            "kv.get" => self.kv_get(scope_arg(args), str_arg(args, "key")?),
+            "kv.set" => {
+                self.kv_set(scope_arg(args), str_arg(args, "key")?, arg(args, "value"))?;
+                Ok(Value::Null)
+            }
+            "kv.all" => self.kv_all(scope_arg(args)),
+            "http.fetch" => {
+                let req = HttpRequest::from_json(args.get("request").unwrap_or(&Value::Null))?;
+                Ok(self.http_fetch(req)?.to_json())
+            }
+            "fs.read" => self.fs_read(str_arg(args, "path")?),
+            "fs.write" => {
+                self.fs_write(str_arg(args, "path")?, str_arg(args, "data")?)?;
+                Ok(Value::Null)
+            }
+            "fs.list" => self.fs_list(args.get("prefix").and_then(|v| v.as_str()).unwrap_or("")),
+            "log" => {
+                let level = args.get("level").and_then(|v| v.as_str()).unwrap_or("info");
+                self.log(level, str_arg(args, "message").unwrap_or(""));
+                Ok(Value::Null)
+            }
+            "emit" => {
+                self.emit(scope_arg(args), str_arg(args, "name")?, arg(args, "data"));
+                Ok(Value::Null)
+            }
+            "respond" => {
+                let status = args.get("status").and_then(|v| v.as_u64()).unwrap_or(200);
+                self.set_response(status.clamp(100, 599) as u16, arg(args, "body"));
+                Ok(Value::Null)
+            }
+            "status_codes" => Ok(Value::Object(status_codes())),
+            other => Err(HostError::Other(format!("unknown host op {other:?}"))),
+        }
     }
 
-    pub fn kv_set(&mut self, key: &str, value: Value) -> Result<(), HostError> {
+    // --- kv ---------------------------------------------------------------
+
+    fn kv_map(&mut self, scope: Scope) -> (&mut Map<String, Value>, &mut bool) {
+        match scope {
+            Scope::Public => (&mut self.kv_public, &mut self.kv_public_dirty),
+            Scope::Private => (&mut self.kv_private, &mut self.kv_private_dirty),
+        }
+    }
+
+    pub fn kv_get(&self, scope: Scope, key: &str) -> Result<Value, HostError> {
+        self.require_kv()?;
+        Ok(self.kv(scope).get(key).cloned().unwrap_or(Value::Null))
+    }
+
+    pub fn kv_set(&mut self, scope: Scope, key: &str, value: Value) -> Result<(), HostError> {
         self.require_kv()?;
         let size = serde_json::to_vec(&value).map(|v| v.len()).unwrap_or(usize::MAX);
         if size > MAX_KV_VALUE_BYTES {
@@ -190,14 +251,31 @@ impl Host {
                 "kv value for {key:?} is {size} bytes (max {MAX_KV_VALUE_BYTES})"
             )));
         }
-        self.kv.insert(key.to_string(), value);
-        self.kv_changed = true;
+        let (map, dirty) = self.kv_map(scope);
+        map.insert(key.to_string(), value);
+        *dirty = true;
         Ok(())
     }
 
-    pub fn kv_all(&self) -> Result<Value, HostError> {
+    pub fn kv_all(&self, scope: Scope) -> Result<Value, HostError> {
         self.require_kv()?;
-        Ok(Value::Object(self.kv.clone()))
+        Ok(Value::Object(self.kv(scope).clone()))
+    }
+
+    // --- events -----------------------------------------------------------
+
+    pub fn emit(&mut self, scope: Scope, name: &str, data: Value) {
+        self.emitted.push(Emitted {
+            name: name.to_string(),
+            data,
+            scope,
+        });
+    }
+
+    // --- response ---------------------------------------------------------
+
+    pub fn set_response(&mut self, status: u16, body: Value) {
+        self.response = Some((status, body));
     }
 
     // --- http -------------------------------------------------------------
@@ -211,10 +289,7 @@ impl Host {
             return Err(HostError::Denied(format!("http host {host:?} not in allowlist")));
         }
         if self.http_calls >= self.limits.http_calls {
-            return Err(HostError::Limit(format!(
-                "http_calls exceeded ({})",
-                self.limits.http_calls
-            )));
+            return Err(HostError::Limit(format!("http_calls exceeded ({})", self.limits.http_calls)));
         }
         self.http_calls += 1;
 
@@ -248,10 +323,7 @@ impl Host {
             .read_to_string(&mut body)
             .map_err(|e| HostError::Other(format!("read body: {e}")))?;
         if body.len() > cap {
-            return Err(HostError::Limit(format!(
-                "response body exceeds {} KB",
-                self.limits.resp_kb
-            )));
+            return Err(HostError::Limit(format!("response body exceeds {} KB", self.limits.resp_kb)));
         }
         Ok(HttpResponse { status, headers, body })
     }
@@ -332,6 +404,24 @@ impl Host {
     }
 }
 
+/// `args.scope == "private"` ⇒ `Private`, else `Public`.
+fn scope_arg(args: &Value) -> Scope {
+    match args.get("scope").and_then(|v| v.as_str()) {
+        Some("private") => Scope::Private,
+        _ => Scope::Public,
+    }
+}
+
+fn arg(args: &Value, key: &str) -> Value {
+    args.get(key).cloned().unwrap_or(Value::Null)
+}
+
+fn str_arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, HostError> {
+    args.get(key)
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| HostError::Other(format!("missing string arg {key:?}")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -340,33 +430,43 @@ mod tests {
     fn host(caps: Capabilities) -> Host {
         let dir = std::env::temp_dir().join(format!("gui-rt-{}-{:p}", std::process::id(), &caps));
         std::fs::create_dir_all(&dir).unwrap();
-        Host::new(dir, caps, Limits::default(), Map::new())
+        Host::new(dir, caps, Limits::default(), Map::new(), Map::new())
     }
 
     #[test]
-    fn kv_roundtrip_and_dirty() {
+    fn dispatch_kv_roundtrip_and_scope_isolation() {
         let mut h = host(Capabilities { kv: true, ..Default::default() });
-        assert_eq!(h.kv_get("hits").unwrap(), json!(null));
-        assert!(!h.kv_changed());
-        h.kv_set("hits", json!(1)).unwrap();
-        assert!(h.kv_changed());
-        assert_eq!(h.kv_get("hits").unwrap(), json!(1));
-        assert_eq!(h.kv_all().unwrap(), json!({ "hits": 1 }));
+        // public + private are independent maps.
+        h.dispatch("kv.set", &json!({ "key": "hits", "value": 1 })).unwrap();
+        h.dispatch("kv.set", &json!({ "scope": "private", "key": "secret", "value": "s" })).unwrap();
+        assert_eq!(h.dispatch("kv.get", &json!({ "key": "hits" })).unwrap(), json!(1));
+        assert_eq!(h.dispatch("kv.get", &json!({ "key": "secret" })).unwrap(), json!(null), "public can't see private");
+        assert_eq!(
+            h.dispatch("kv.get", &json!({ "scope": "private", "key": "secret" })).unwrap(),
+            json!("s")
+        );
+        assert!(h.kv_changed(Scope::Public) && h.kv_changed(Scope::Private));
+        assert_eq!(h.kv(Scope::Public), json!({ "hits": 1 }).as_object().unwrap());
     }
 
     #[test]
-    fn capabilities_default_deny() {
+    fn dispatch_emit_records_events() {
         let mut h = host(Capabilities::default());
-        assert!(matches!(h.kv_get("x"), Err(HostError::Denied(_))));
-        assert!(matches!(h.kv_set("x", json!(1)), Err(HostError::Denied(_))));
-        assert!(matches!(h.fs_read("a"), Err(HostError::Denied(_))));
+        h.dispatch("emit", &json!({ "name": "saved", "data": { "id": 1 } })).unwrap();
+        h.dispatch("emit", &json!({ "scope": "private", "name": "audit", "data": "x" })).unwrap();
+        assert_eq!(h.emitted().len(), 2);
+        assert_eq!(h.emitted()[0].name, "saved");
+        assert_eq!(h.emitted()[0].scope, Scope::Public);
+        assert_eq!(h.emitted()[1].scope, Scope::Private);
+    }
+
+    #[test]
+    fn dispatch_capabilities_default_deny() {
+        let mut h = host(Capabilities::default());
+        assert!(matches!(h.dispatch("kv.get", &json!({ "key": "x" })), Err(HostError::Denied(_))));
+        assert!(matches!(h.dispatch("fs.read", &json!({ "path": "a" })), Err(HostError::Denied(_))));
         assert!(matches!(
-            h.http_fetch(HttpRequest {
-                url: "https://blocked.example/x".into(),
-                method: "GET".into(),
-                headers: vec![],
-                body: None,
-            }),
+            h.dispatch("http.fetch", &json!({ "request": { "url": "https://blocked.example/x" } })),
             Err(HostError::Denied(_))
         ));
     }
@@ -384,19 +484,8 @@ mod tests {
     }
 
     #[test]
-    fn http_allowlist_denies_unlisted_host() {
-        let mut h = host(Capabilities {
-            http: vec!["allowed.example".into()],
-            ..Default::default()
-        });
-        assert!(matches!(
-            h.http_fetch(HttpRequest {
-                url: "https://other.example/data".into(),
-                method: "GET".into(),
-                headers: vec![],
-                body: None,
-            }),
-            Err(HostError::Denied(_))
-        ));
+    fn unknown_op_errors() {
+        let mut h = host(Capabilities::default());
+        assert!(matches!(h.dispatch("nope", &json!({})), Err(HostError::Other(_))));
     }
 }

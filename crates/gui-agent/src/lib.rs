@@ -492,6 +492,8 @@ mod tests {
                 value: json!(null),
                 surface: p.id(),
                 version: None,
+                scope: gui_schema::Scope::Public,
+                source: None,
                 received_at: "t".into(),
             };
             atomic_write(
@@ -525,6 +527,8 @@ mod tests {
                 value: json!({"email": "a@b.c"}),
                 surface: pid,
                 version: None,
+                scope: gui_schema::Scope::Public,
+                source: None,
                 received_at: "t".into(),
             };
             atomic_write(

@@ -19,7 +19,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use gui_schema::{atomic_write, Event, SurfacePath, Version, DEFAULT_DECK, EVENT_SCHEMA_VERSION};
+use gui_schema::{atomic_write, Event, Scope, SurfacePath, Version, DEFAULT_DECK, EVENT_SCHEMA_VERSION};
 use serde::Deserialize;
 use tokio::sync::broadcast;
 use tokio_stream::{wrappers::BroadcastStream, Stream, StreamExt};
@@ -238,7 +238,11 @@ async fn api_events(
     if idx.surface(&path).is_none() {
         return not_found();
     }
-    let events = read_surface_events(&st.root, &path, 100);
+    // Public events only — the events API is browser-facing; the agent reads all via gui-agent.
+    let events: Vec<_> = read_surface_events(&st.root, &path, 100)
+        .into_iter()
+        .filter(|e| e.scope.is_public())
+        .collect();
     Json(serde_json::json!({ "surface": path.id(), "events": events })).into_response()
 }
 
@@ -255,7 +259,7 @@ async fn api_kv(
     if idx.surface(&path).is_none() {
         return not_found();
     }
-    Json(serde_json::Value::Object(load_kv(&st.root, &path))).into_response()
+    Json(serde_json::Value::Object(load_kv_file(&path.kv_path(&st.root)))).into_response()
 }
 
 async fn api_index(State(st): State<AppState>) -> Json<api::IndexResponse> {
@@ -384,6 +388,8 @@ async fn backflow(
         value: input.value,
         surface: path.id(),
         version: input.version.or_else(|| Some(found.live().version.to_string())),
+        scope: Scope::Public, // a direct UI submission is visible to the browser
+        source: Some("ui".to_string()),
         received_at: iso,
     };
     let target = path.events_dir(&st.root).join(event.file_name(ms));
@@ -408,9 +414,9 @@ async fn backflow(
         .into_response()
 }
 
-/// Read the surface's materialized KV view (`state/kv.json`), or an empty object if absent.
-fn load_kv(root: &FsPath, path: &SurfacePath) -> serde_json::Map<String, serde_json::Value> {
-    std::fs::read(path.kv_path(root))
+/// Read a KV file as a JSON object, or an empty object if absent/invalid.
+fn load_kv_file(path: &FsPath) -> serde_json::Map<String, serde_json::Value> {
+    std::fs::read(path)
         .ok()
         .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
         .and_then(|v| match v {
@@ -420,8 +426,25 @@ fn load_kv(root: &FsPath, path: &SurfacePath) -> serde_json::Map<String, serde_j
         .unwrap_or_default()
 }
 
+/// The private KV file (never served over the public API).
+fn kv_private_path(root: &FsPath, path: &SurfacePath) -> PathBuf {
+    path.state_dir(root).join("kv.private.json")
+}
+
+fn persist_kv(target: &FsPath, view: &gui_runtime::KvView, surface: &str) {
+    if !view.changed {
+        return;
+    }
+    let bytes =
+        serde_json::to_vec_pretty(&serde_json::Value::Object(view.map.clone())).expect("kv serializes");
+    if let Err(e) = atomic_write(target, &bytes) {
+        tracing::error!(surface = %surface, error = %e, "kv persist failed");
+    }
+}
+
 /// Run a surface's handler on a blocking worker (the engines + host I/O are synchronous),
-/// persist any KV change (which fires the watcher → SSE), and return the handler's response.
+/// persist any public/private KV change (the public change fires the watcher → SSE), write any
+/// emitted events into the log, and return the handler's response.
 async fn run_surface_handler(
     st: &AppState,
     path: &SurfacePath,
@@ -431,12 +454,15 @@ async fn run_surface_handler(
 ) -> Response {
     let root = st.root.clone();
     let path = path.clone();
-    let kv_path = path.kv_path(&root);
+    let kv_public_path = path.kv_path(&root);
+    let kv_private_path = kv_private_path(&root, &path);
     let state_dir = path.state_dir(&root);
-    let kv = load_kv(&root, &path);
+    let kv_public = load_kv_file(&kv_public_path);
+    let kv_private = load_kv_file(&kv_private_path);
+    let live_version = event.version.clone();
 
     let joined = tokio::task::spawn_blocking(move || {
-        gui_runtime::run_handler(&def, &version_dir, &state_dir, &event, kv)
+        gui_runtime::run_handler(&def, &version_dir, &state_dir, &event, kv_public, kv_private)
     })
     .await;
 
@@ -457,12 +483,28 @@ async fn run_surface_handler(
         }
     };
 
-    if outcome.kv_changed {
-        let bytes = serde_json::to_vec_pretty(&serde_json::Value::Object(outcome.kv))
-            .expect("kv serializes");
-        if let Err(e) = atomic_write(&kv_path, &bytes) {
-            tracing::error!(surface = %path.id(), error = %e, "kv persist failed");
+    persist_kv(&kv_public_path, &outcome.public, &path.id());
+    persist_kv(&kv_private_path, &outcome.private, &path.id());
+
+    // Write events the handler emitted into the log for the agent (and public events API).
+    let (mut ms, iso) = now();
+    for em in &outcome.emitted {
+        let ev = Event {
+            schema_version: EVENT_SCHEMA_VERSION.to_string(),
+            action: em.name.clone(),
+            component: None,
+            value: em.data.clone(),
+            surface: path.id(),
+            version: live_version.clone(),
+            scope: em.scope,
+            source: Some("handler".to_string()),
+            received_at: iso.clone(),
+        };
+        let target = path.events_dir(&root).join(ev.file_name(ms));
+        if let Err(e) = atomic_write(&target, &serde_json::to_vec_pretty(&ev).expect("event serializes")) {
+            tracing::error!(surface = %path.id(), error = %e, "emit persist failed");
         }
+        ms += 1; // keep distinct filenames for a burst of emits
     }
 
     let status = StatusCode::from_u16(outcome.response.status).unwrap_or(StatusCode::OK);

@@ -344,7 +344,26 @@ pub struct DeckManifest {
 // backflow event
 // ---------------------------------------------------------------------------
 
-/// A backflow event, written by the server into `{surface}/events/{unix-ms}-{action}.json`.
+/// Visibility of KV entries and events. `public` is served over the HTTP API (the browser /
+/// rendered surface can read it); `private` is for the producing agent only and is never
+/// served on the public endpoints.
+#[derive(Serialize, Deserialize, schemars::JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Scope {
+    #[default]
+    Public,
+    Private,
+}
+
+impl Scope {
+    pub fn is_public(&self) -> bool {
+        matches!(self, Scope::Public)
+    }
+}
+
+/// A backflow/emitted event, written into `{surface}/events/{unix-ms}-{action}.json`. Created
+/// by a direct UI submission (backflow) or by a handler via `host.emit`. The agent reads them;
+/// `public` events are also served over the events API.
 #[derive(Serialize, Deserialize, schemars::JsonSchema, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Event {
@@ -358,6 +377,12 @@ pub struct Event {
     pub surface: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+    /// Visibility — `public` events are served on the events API; `private` are agent-only.
+    #[serde(default, skip_serializing_if = "Scope::is_public")]
+    pub scope: Scope,
+    /// `ui` for a direct submission, `handler` for a `host.emit` from a handler.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
     pub received_at: String,
 }
 
@@ -728,6 +753,8 @@ mod tests {
             value: json!({"region": "emea"}),
             surface: "demo/main/sales".into(),
             version: Some("1719500000000".into()),
+            scope: Scope::Private,
+            source: Some("handler".into()),
             received_at: "2026-06-27T10:05:00Z".into(),
         };
         assert_eq!(e, serde_json::from_str(&serde_json::to_string(&e).unwrap()).unwrap());

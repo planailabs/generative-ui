@@ -1,20 +1,19 @@
 //! JavaScript engine (QuickJS via `rquickjs`).
 //!
-//! Sandbox posture: a bare QuickJS runtime has no ambient I/O — `fetch`, `fs`, `require`,
-//! timers, etc. simply don't exist. The only capabilities a handler has are the ones we bind
-//! under `host`, each gated by the shared [`Host`]. Memory is capped via
-//! `Runtime::set_memory_limit`; wall-clock via an interrupt handler that trips past a deadline.
+//! Sandbox: a bare QuickJS runtime has no ambient I/O — only what we bind exists. Memory is
+//! capped via `set_memory_limit`; wall-clock via an interrupt past a deadline. The whole host
+//! surface is reached through ONE bound primitive, `__host_call(op, argsJson) -> resultJson`;
+//! the ergonomic `host` object ([`PRELUDE`]) is a thin wrapper over it.
 //!
-//! Handler contract: `main.js` is a script (not a module) that defines a global
-//! `function handle(event, host)` and returns the response body. We pass `host` as a JS object
-//! that marshals every call to/from JSON across thin Rust-bound primitives.
+//! Handler contract: `main.js` is a script defining a global `function handle(event, host)`
+//! that returns the response body.
 
 use std::time::{Duration, Instant};
 
 use rquickjs::{Context, Ctx, Function, Runtime};
 
 use crate::engine::{Engine, HandlerError, HandlerResponse, Invocation};
-use crate::host::{HttpRequest, SharedHost};
+use crate::host::SharedHost;
 
 pub struct JsEngine;
 
@@ -24,30 +23,35 @@ impl JsEngine {
     }
 }
 
-/// The `host` object, built in JS over the low-level `__host_*` primitives we bind. Mirrors
-/// the WIT interface / Lua table exactly.
+/// The ergonomic `host` facade, built once over the single `__host_call` primitive. Mirrors
+/// the Lua table and the WASM guest helpers exactly.
 const PRELUDE: &str = r#"
-globalThis.host = {
-  kv: {
-    get: (k) => JSON.parse(__host_kv_get(String(k))),
-    set: (k, v) => __host_kv_set(String(k), JSON.stringify(v === undefined ? null : v)),
-    all: () => JSON.parse(__host_kv_all()),
-  },
-  http: { fetch: (req) => JSON.parse(__host_http(JSON.stringify(req))) },
-  fs: {
-    read: (p) => JSON.parse(__host_fs_read(String(p))),
-    write: (p, d) => __host_fs_write(String(p), String(d)),
-    list: (p) => JSON.parse(__host_fs_list(String(p || ""))),
-  },
-  log: (level, msg) => __host_log(String(level), String(msg)),
-  // response(body) or response(code, body): set the HTTP response explicitly (overrides
-  // the handler's return value).
-  response: (code, body) => {
-    if (body === undefined) { body = code; code = 200; }
-    __host_respond(code | 0, JSON.stringify(body === undefined ? null : body));
-  },
-  responseCode: JSON.parse(__host_status_codes()),
-};
+globalThis.host = (() => {
+  const call = (op, args) => JSON.parse(__host_call(op, JSON.stringify(args || {})));
+  const kv = (scope) => ({
+    get: (k) => call("kv.get", { scope, key: String(k) }),
+    set: (k, v) => call("kv.set", { scope, key: String(k), value: v === undefined ? null : v }),
+    all: () => call("kv.all", { scope }),
+  });
+  return {
+    kv: kv("public"),
+    kvPrivate: kv("private"),
+    http: { fetch: (req) => call("http.fetch", { request: req }) },
+    fs: {
+      read: (p) => call("fs.read", { path: String(p) }),
+      write: (p, d) => call("fs.write", { path: String(p), data: String(d) }),
+      list: (p) => call("fs.list", { prefix: String(p || "") }),
+    },
+    log: (level, msg) => call("log", { level: String(level), message: String(msg) }),
+    emit: (name, data) => call("emit", { scope: "public", name: String(name), data: data === undefined ? null : data }),
+    emitPrivate: (name, data) => call("emit", { scope: "private", name: String(name), data: data === undefined ? null : data }),
+    response: (code, body) => {
+      if (body === undefined) { body = code; code = 200; }
+      call("respond", { status: code | 0, body: body === undefined ? null : body });
+    },
+    responseCode: call("status_codes", {}),
+  };
+})();
 "#;
 
 impl Engine for JsEngine {
@@ -65,24 +69,21 @@ impl Engine for JsEngine {
         let started = Instant::now();
 
         let result: Result<String, HandlerError> = ctx.with(|ctx| {
-            bind_host(&ctx, &host)?;
+            bind_host_call(&ctx, &host)?;
             ctx.globals()
                 .set("__event_json", event_json)
                 .map_err(|e| guest(&ctx, e))?;
             ctx.eval::<(), _>(PRELUDE).map_err(|e| guest(&ctx, e))?;
             ctx.eval::<(), _>(source.as_bytes()).map_err(|e| guest(&ctx, e))?;
-            // Call the handler and JSON-encode its result so we can read it back into Rust.
-            let out: String = ctx
-                .eval(
-                    "JSON.stringify((function(){\
-                       if (typeof handle !== 'function') throw new Error('main.js must define a global handle(event, host)');\
-                       var r = handle(JSON.parse(__event_json), host);\
-                       return r === undefined ? null : r;\
-                     })())"
-                        .as_bytes(),
-                )
-                .map_err(|e| guest(&ctx, e))?;
-            Ok(out)
+            ctx.eval(
+                "JSON.stringify((function(){\
+                   if (typeof handle !== 'function') throw new Error('main.js must define a global handle(event, host)');\
+                   var r = handle(JSON.parse(__event_json), host);\
+                   return r === undefined ? null : r;\
+                 })())"
+                    .as_bytes(),
+            )
+            .map_err(|e| guest(&ctx, e))
         });
 
         let body_json = match result {
@@ -92,12 +93,32 @@ impl Engine for JsEngine {
             }
             Err(e) => return Err(e),
         };
-        let body = serde_json::from_str(&body_json).unwrap_or(serde_json::Value::Null);
-        Ok(HandlerResponse::ok(body))
+        Ok(HandlerResponse::ok(
+            serde_json::from_str(&body_json).unwrap_or(serde_json::Value::Null),
+        ))
     }
 }
 
-/// Map a top-level rquickjs error to a `HandlerError`, pulling the pending exception's message.
+/// Bind the single `__host_call(op, argsJson) -> resultJson`. A [`HostError`] becomes a thrown
+/// JS exception.
+fn bind_host_call(ctx: &Ctx, host: &SharedHost) -> Result<(), HandlerError> {
+    let h = host.clone();
+    let f = Function::new(ctx.clone(), move |ctx: Ctx, op: String, args_json: String| {
+        let args = serde_json::from_str(&args_json).unwrap_or(serde_json::Value::Null);
+        match h.borrow_mut().dispatch(&op, &args) {
+            Ok(v) => Ok(v.to_string()),
+            Err(e) => Err(ctx.throw(
+                rquickjs::String::from_str(ctx.clone(), &e.to_string())
+                    .map(rquickjs::Value::from_string)
+                    .unwrap_or_else(|_| rquickjs::Value::new_null(ctx.clone())),
+            )),
+        }
+    })
+    .map_err(js_err)?;
+    ctx.globals().set("__host_call", f).map_err(js_err)?;
+    Ok(())
+}
+
 fn guest(ctx: &Ctx, e: rquickjs::Error) -> HandlerError {
     if e.is_exception() {
         let exc = ctx.catch();
@@ -114,131 +135,4 @@ fn guest(ctx: &Ctx, e: rquickjs::Error) -> HandlerError {
 
 fn js_err(e: rquickjs::Error) -> HandlerError {
     HandlerError::Guest(e.to_string())
-}
-
-/// Bind the low-level `__host_*` primitives. Each takes/returns JSON strings; a [`HostError`]
-/// becomes a thrown JS exception.
-fn bind_host(ctx: &Ctx, host: &SharedHost) -> Result<(), HandlerError> {
-    let g = ctx.globals();
-
-    macro_rules! throw {
-        ($ctx:expr, $e:expr) => {
-            $ctx.throw(
-                rquickjs::String::from_str($ctx.clone(), &$e.to_string())
-                    .map(rquickjs::Value::from_string)
-                    .unwrap_or_else(|_| rquickjs::Value::new_null($ctx.clone())),
-            )
-        };
-    }
-
-    let h = host.clone();
-    g.set(
-        "__host_kv_get",
-        Function::new(ctx.clone(), move |ctx: Ctx, key: String| {
-            h.borrow()
-                .kv_get(&key)
-                .map(|v| v.to_string())
-                .map_err(|e| throw!(ctx, e))
-        })
-        .map_err(js_err)?,
-    )
-    .map_err(js_err)?;
-
-    let h = host.clone();
-    g.set(
-        "__host_kv_set",
-        Function::new(ctx.clone(), move |ctx: Ctx, key: String, value_json: String| {
-            let value = serde_json::from_str(&value_json).unwrap_or(serde_json::Value::Null);
-            h.borrow_mut().kv_set(&key, value).map_err(|e| throw!(ctx, e))
-        })
-        .map_err(js_err)?,
-    )
-    .map_err(js_err)?;
-
-    let h = host.clone();
-    g.set(
-        "__host_kv_all",
-        Function::new(ctx.clone(), move |ctx: Ctx| {
-            h.borrow().kv_all().map(|v| v.to_string()).map_err(|e| throw!(ctx, e))
-        })
-        .map_err(js_err)?,
-    )
-    .map_err(js_err)?;
-
-    let h = host.clone();
-    g.set(
-        "__host_http",
-        Function::new(ctx.clone(), move |ctx: Ctx, req_json: String| {
-            let v = serde_json::from_str(&req_json)
-                .map_err(|e| crate::host::HostError::Other(format!("bad http request: {e}")))
-                .map_err(|e| throw!(ctx, e))?;
-            let req = HttpRequest::from_json(&v).map_err(|e| throw!(ctx, e))?;
-            let resp = h.borrow_mut().http_fetch(req).map_err(|e| throw!(ctx, e))?;
-            Ok::<String, rquickjs::Error>(resp.to_json().to_string())
-        })
-        .map_err(js_err)?,
-    )
-    .map_err(js_err)?;
-
-    let h = host.clone();
-    g.set(
-        "__host_fs_read",
-        Function::new(ctx.clone(), move |ctx: Ctx, path: String| {
-            h.borrow().fs_read(&path).map(|v| v.to_string()).map_err(|e| throw!(ctx, e))
-        })
-        .map_err(js_err)?,
-    )
-    .map_err(js_err)?;
-
-    let h = host.clone();
-    g.set(
-        "__host_fs_write",
-        Function::new(ctx.clone(), move |ctx: Ctx, path: String, data: String| {
-            h.borrow().fs_write(&path, &data).map_err(|e| throw!(ctx, e))
-        })
-        .map_err(js_err)?,
-    )
-    .map_err(js_err)?;
-
-    let h = host.clone();
-    g.set(
-        "__host_fs_list",
-        Function::new(ctx.clone(), move |ctx: Ctx, prefix: String| {
-            h.borrow().fs_list(&prefix).map(|v| v.to_string()).map_err(|e| throw!(ctx, e))
-        })
-        .map_err(js_err)?,
-    )
-    .map_err(js_err)?;
-
-    let h = host.clone();
-    g.set(
-        "__host_log",
-        Function::new(ctx.clone(), move |level: String, msg: String| {
-            h.borrow_mut().log(&level, &msg);
-        })
-        .map_err(js_err)?,
-    )
-    .map_err(js_err)?;
-
-    let h = host.clone();
-    g.set(
-        "__host_respond",
-        Function::new(ctx.clone(), move |status: i32, body_json: String| {
-            let body = serde_json::from_str(&body_json).unwrap_or(serde_json::Value::Null);
-            h.borrow_mut().set_response(status.clamp(100, 599) as u16, body);
-        })
-        .map_err(js_err)?,
-    )
-    .map_err(js_err)?;
-
-    g.set(
-        "__host_status_codes",
-        Function::new(ctx.clone(), move || {
-            serde_json::Value::Object(crate::host::status_codes()).to_string()
-        })
-        .map_err(js_err)?,
-    )
-    .map_err(js_err)?;
-
-    Ok(())
 }

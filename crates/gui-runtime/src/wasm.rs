@@ -20,7 +20,7 @@ use serde_json::Value;
 use wasmtime::{Caller, Config, Engine as WtEngine, Linker, Module, Store, StoreLimits, StoreLimitsBuilder};
 
 use crate::engine::{Engine, HandlerError, HandlerResponse, Invocation};
-use crate::host::{HttpRequest, SharedHost};
+use crate::host::SharedHost;
 
 pub struct WasmEngine;
 
@@ -134,84 +134,20 @@ fn memory(caller: &mut Caller<'_, Data>) -> wasmtime::Result<wasmtime::Memory> {
         .ok_or_else(|| wasmtime::Error::msg("guest missing memory export"))
 }
 
-/// Bind the `host.*` imports. A `HostError` becomes a trap (aborting the guest).
+/// Bind the single host import `host_call(op_ptr,op_len,args_ptr,args_len) -> i64` over
+/// [`Host::dispatch`](crate::host::Host::dispatch). A `HostError` becomes a trap.
 fn link_host(linker: &mut Linker<Data>) -> wasmtime::Result<()> {
-    // data-returning: read input str, run host op → JSON string, allocate in guest.
-    linker.func_wrap("host", "kv_get", |mut caller: Caller<'_, Data>, p: i32, l: i32| -> Result64 {
-        let key = read_guest(&mut caller, p, l)?;
-        let v = caller.data().host.borrow().kv_get(&key)?;
-        write_guest(&mut caller, v.to_string().as_bytes())
-    })?;
     linker.func_wrap(
         "host",
-        "kv_set",
-        |mut caller: Caller<'_, Data>, kp: i32, kl: i32, vp: i32, vl: i32| -> wasmtime::Result<()> {
-            let key = read_guest(&mut caller, kp, kl)?;
-            let val = read_guest(&mut caller, vp, vl)?;
-            let v: Value = serde_json::from_str(&val).unwrap_or(Value::Null);
-            caller.data().host.borrow_mut().kv_set(&key, v)?;
-            Ok(())
+        "host_call",
+        |mut caller: Caller<'_, Data>, op_ptr: i32, op_len: i32, args_ptr: i32, args_len: i32| -> Result64 {
+            let op = read_guest(&mut caller, op_ptr, op_len)?;
+            let args_json = read_guest(&mut caller, args_ptr, args_len)?;
+            let args = serde_json::from_str(&args_json).unwrap_or(Value::Null);
+            let result = caller.data().host.borrow_mut().dispatch(&op, &args)?;
+            write_guest(&mut caller, result.to_string().as_bytes())
         },
     )?;
-    linker.func_wrap("host", "kv_all", |mut caller: Caller<'_, Data>| -> Result64 {
-        let v = caller.data().host.borrow().kv_all()?;
-        write_guest(&mut caller, v.to_string().as_bytes())
-    })?;
-    linker.func_wrap("host", "http_fetch", |mut caller: Caller<'_, Data>, p: i32, l: i32| -> Result64 {
-        let req_json = read_guest(&mut caller, p, l)?;
-        let v: Value = serde_json::from_str(&req_json)?;
-        let req = HttpRequest::from_json(&v)?;
-        let resp = caller.data().host.borrow_mut().http_fetch(req)?;
-        write_guest(&mut caller, resp.to_json().to_string().as_bytes())
-    })?;
-    linker.func_wrap("host", "fs_read", |mut caller: Caller<'_, Data>, p: i32, l: i32| -> Result64 {
-        let path = read_guest(&mut caller, p, l)?;
-        let v = caller.data().host.borrow().fs_read(&path)?;
-        write_guest(&mut caller, v.to_string().as_bytes())
-    })?;
-    linker.func_wrap(
-        "host",
-        "fs_write",
-        |mut caller: Caller<'_, Data>, pp: i32, pl: i32, dp: i32, dl: i32| -> wasmtime::Result<()> {
-            let path = read_guest(&mut caller, pp, pl)?;
-            let data = read_guest(&mut caller, dp, dl)?;
-            caller.data().host.borrow().fs_write(&path, &data)?;
-            Ok(())
-        },
-    )?;
-    linker.func_wrap("host", "fs_list", |mut caller: Caller<'_, Data>, p: i32, l: i32| -> Result64 {
-        let prefix = read_guest(&mut caller, p, l)?;
-        let v = caller.data().host.borrow().fs_list(&prefix)?;
-        write_guest(&mut caller, v.to_string().as_bytes())
-    })?;
-    linker.func_wrap(
-        "host",
-        "log",
-        |mut caller: Caller<'_, Data>, lp: i32, ll: i32, mp: i32, ml: i32| -> wasmtime::Result<()> {
-            let level = read_guest(&mut caller, lp, ll)?;
-            let msg = read_guest(&mut caller, mp, ml)?;
-            caller.data().host.borrow_mut().log(&level, &msg);
-            Ok(())
-        },
-    )?;
-    linker.func_wrap(
-        "host",
-        "respond",
-        |mut caller: Caller<'_, Data>, status: i32, bp: i32, bl: i32| -> wasmtime::Result<()> {
-            let body_json = read_guest(&mut caller, bp, bl)?;
-            let body: Value = serde_json::from_str(&body_json).unwrap_or(Value::Null);
-            caller
-                .data()
-                .host
-                .borrow_mut()
-                .set_response((status.clamp(100, 599)) as u16, body);
-            Ok(())
-        },
-    )?;
-    linker.func_wrap("host", "status_codes", |mut caller: Caller<'_, Data>| -> Result64 {
-        let codes = Value::Object(crate::host::status_codes());
-        write_guest(&mut caller, codes.to_string().as_bytes())
-    })?;
     Ok(())
 }
 
