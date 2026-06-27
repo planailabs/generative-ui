@@ -91,41 +91,49 @@ pub fn page_ctx(
     }
 }
 
-/// Minimal server-rendered inspector (Stage 7 rebuilds this with the suite + live SSE).
-pub fn inspector_page(idx: &Index) -> String {
+/// Server-rendered inspector: the discovered tree with live versions, backflow counts, and
+/// deck links. Live-updates via an `EventSource('/events')` that reloads on any change.
+pub fn inspector_page(idx: &Index, root: &std::path::Path) -> String {
     let mut body = String::new();
     body.push_str("<h1>Generative UI Suite</h1>");
     body.push_str(&format!(
-        "<p>{} agent(s), {} surface(s).</p>",
+        "<p>{} agent(s), {} surface(s). <a href=\"/api/index.json\">index.json</a> · <a href=\"/api/activity.json\">activity</a></p>",
         idx.agents.len(),
         idx.surface_count()
     ));
     if idx.agents.is_empty() {
-        body.push_str("<p>No surfaces discovered yet.</p>");
+        body.push_str("<p>No surfaces discovered yet. Publish one into the artifacts directory.</p>");
     }
     for agent in idx.agents.values() {
-        body.push_str(&format!("<h2>{}</h2><ul>", esc(&agent.slug)));
+        body.push_str(&format!("<h2>{}</h2>", esc(&agent.slug)));
         for deck in agent.decks.values() {
             body.push_str(&format!(
-                "<li><strong>{}</strong> <a href=\"/{}/{}/\">deck</a><ul>",
-                esc(&deck.slug),
+                "<h3><a href=\"/{}/{}/\">{}</a> <small>(deck)</small></h3><ul>",
                 esc(&agent.slug),
+                esc(&deck.slug),
                 esc(&deck.slug)
             ));
             for surface in deck.ordered_surfaces() {
                 let live = surface.live();
+                let events = crate::server::event_count(root, &surface.path);
                 body.push_str(&format!(
-                    "<li><a href=\"{}\">{}</a> — v{} ({} version(s))</li>",
-                    esc(&surface.path.url()),
-                    esc(&live.manifest.title),
-                    live.version,
-                    surface.versions.len()
+                    "<li><a href=\"{url}\">{title}</a> — v{ver} ({nv} version(s), {ev} backflow event(s)) \
+                     <a href=\"/api{idpath}/versions.json\">versions</a></li>",
+                    url = esc(&surface.path.url()),
+                    title = esc(&live.manifest.title),
+                    ver = live.version,
+                    nv = surface.versions.len(),
+                    ev = events,
+                    idpath = esc(&surface.path.url().trim_end_matches('/').to_string()),
                 ));
             }
-            body.push_str("</ul></li>");
+            body.push_str("</ul>");
         }
-        body.push_str("</ul>");
     }
+    // Live reload on any discovery/backflow change.
+    body.push_str(
+        "<script>try{new EventSource('/events').onmessage=()=>location.reload();}catch(e){}</script>",
+    );
     document("Inspector — Generative UI Suite", &body)
 }
 

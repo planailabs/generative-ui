@@ -204,6 +204,70 @@ async fn backflow_writes_event_into_directory() {
 }
 
 #[tokio::test]
+async fn watcher_reindexes_and_broadcasts() {
+    use std::time::{Duration, Instant};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let state = AppState::new(tmp.path().to_path_buf());
+    let mut rx = state.events_tx.subscribe();
+    let _watcher = gui_server::server::spawn_watcher(state.clone()).expect("watcher");
+    assert_eq!(state.index.load_full().surface_count(), 0);
+
+    // Publish a surface by writing files into the watched tree.
+    let d = tmp.path().join("demo/main/sales/v/100");
+    write(&d.join("frame.json"), &manifest("Sales", ""));
+    write(&d.join("index.html"), "<ui-text>hi</ui-text>");
+
+    // Wait until the watcher re-indexes (poll broadcasts + index until visible).
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut seen = false;
+    while Instant::now() < deadline {
+        let _ = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await;
+        if state.index.load_full().surface_count() >= 1 {
+            seen = true;
+            break;
+        }
+    }
+    assert!(seen, "watcher did not re-index the new surface");
+}
+
+#[tokio::test]
+async fn sse_and_events_api() {
+    let tmp = tempfile::tempdir().unwrap();
+    fixture(tmp.path());
+    let base = start(tmp.path()).await;
+    let http = reqwest::Client::new();
+
+    // SSE endpoint advertises the event stream.
+    let es = http.get(format!("{base}/events")).send().await.unwrap();
+    assert_eq!(es.status(), 200);
+    assert!(es
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .starts_with("text/event-stream"));
+    drop(es);
+
+    // Record a backflow, then read it back via the events API.
+    http.post(format!("{base}/backflow/demo/main/sales"))
+        .json(&serde_json::json!({"action":"ping"}))
+        .send()
+        .await
+        .unwrap();
+    let ev: serde_json::Value = http
+        .get(format!("{base}/api/demo/main/sales/events.json"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(ev["events"][0]["action"], "ping");
+}
+
+#[tokio::test]
 async fn serves_suite_as_esm() {
     let tmp = tempfile::tempdir().unwrap();
     let base = start(tmp.path()).await;
