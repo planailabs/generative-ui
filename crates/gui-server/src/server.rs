@@ -34,12 +34,13 @@ pub struct AppState {
     pub root: PathBuf,
     /// Fan-out for SSE: a small JSON line per discovery/backflow change.
     pub events_tx: broadcast::Sender<String>,
-    /// Whether matching backflow actions run their surface handler (opt-in; runs code).
+    /// Whether matching backflow actions run their surface handler. On by default (handlers are
+    /// sandboxed — default-deny capabilities + limits); turn off with `--disable-handlers`.
     pub enable_handlers: bool,
 }
 
 impl AppState {
-    /// Build state by scanning `root` once.
+    /// Build state by scanning `root` once. Handler execution is enabled by default.
     pub fn new(root: PathBuf) -> Self {
         let index = Index::build(&root);
         let (events_tx, _) = broadcast::channel(64);
@@ -47,7 +48,7 @@ impl AppState {
             index: Arc::new(ArcSwap::from_pointee(index)),
             root,
             events_tx,
-            enable_handlers: false,
+            enable_handlers: true,
         }
     }
 
@@ -390,12 +391,21 @@ async fn backflow(
         return (StatusCode::INTERNAL_SERVER_ERROR, Html(format!("write failed: {e}"))).into_response();
     }
 
-    // If a handler is registered for this action (and execution is enabled), run it: it folds
-    // KV from the event and defines the HTTP response. Handlers never touch the surface HTML.
-    if st.enable_handlers
-        && let Some(def) = found.live().manifest.handlers.get(&event.action).cloned() {
+    // If a handler is registered for this action, run it (when enabled): it folds KV from the
+    // event and defines the HTTP response. Handlers never touch the surface HTML.
+    if let Some(def) = found.live().manifest.handlers.get(&event.action).cloned() {
+        if st.enable_handlers {
             return run_surface_handler(&st, &path, found.live().dir.clone(), def, event).await;
         }
+        // Disabled via --disable-handlers — don't silently no-op; say why nothing ran.
+        tracing::warn!(
+            surface = %path.id(),
+            action = %event.action,
+            "a {:?} handler is declared for this action but handler execution is off \
+             (--disable-handlers); remove the flag to run it (event was still logged)",
+            def.lang,
+        );
+    }
 
     (
         StatusCode::ACCEPTED,

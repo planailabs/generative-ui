@@ -388,8 +388,8 @@ async fn handler_emit_and_scope_split_across_the_api() {
 }
 
 #[tokio::test]
-async fn handlers_disabled_by_default_only_logs_event() {
-    // Without --enable-handlers the same surface just logs the event and returns 202.
+async fn disable_handlers_only_logs_event() {
+    // With --disable-handlers the same surface just logs the event and returns 202.
     let tmp = tempfile::tempdir().unwrap();
     let d = tmp.path().join("demo/main/counter/v/1");
     write(
@@ -402,7 +402,7 @@ async fn handlers_disabled_by_default_only_logs_event() {
     write(&d.join("index.html"), "<ui-text>counter</ui-text>");
     write(&d.join("main.js"), "function handle(e,h){ return {ran:true}; }");
 
-    let base = start(tmp.path()).await; // handlers disabled
+    let base = start_with(AppState::new(tmp.path().to_path_buf()).with_handlers(false)).await;
     let http = reqwest::Client::new();
     let res = http
         .post(format!("{base}/backflow/demo/main/counter"))

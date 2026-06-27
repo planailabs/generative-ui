@@ -67,7 +67,7 @@ sandboxed code (JS, Lua, or WASM) that runs on the server when a backflow action
 handler **never edits the surface** — it folds the surface's **KV view** (a small key/value
 store the UI reads) and defines the HTTP response. Bind a KV value in your HTML with
 `data-kv="key"`; the browser refreshes those nodes after each interaction, with no reload.
-(The server must run with `--enable-handlers`.)
+(Handler execution is on by default; the server's `--disable-handlers` turns it off.)
 
 ```json
 {

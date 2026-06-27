@@ -53,7 +53,7 @@ nix develop                 # enter the dev shell (pinned Rust + node)
 cargo build                 # build the workspace
 cargo test                  # run all tests (the gate)
 cargo run -p gui-server -- --artifacts ./artifacts
-cargo run -p gui-server -- --artifacts ./artifacts --enable-handlers  # run surface handlers
+cargo run -p gui-server -- --artifacts ./artifacts --disable-handlers # turn handler execution off
 cargo run -p gui-cli -- index ./artifacts
 nix flake check             # cargo test + clippy as flake checks
 nix build .#gui-server      # build a single binary
@@ -71,7 +71,7 @@ UPDATE_SCHEMAS=1 cargo test -p gui-schema   # regenerate schemas/*.json from the
 
 A surface may declare `handlers` in `frame.json` (`action → {lang, entry, capabilities,
 limits}`) — code (`main.js`/`main.lua`/`main.wasm`) the server runs when that backflow
-action arrives (opt-in: `--enable-handlers`). Handlers **never edit the surface**; they fold
+action arrives (on by default — sandboxed; `--disable-handlers` turns execution off). Handlers **never edit the surface**; they fold
 the surface's KV view (`state/kv.json`, served at `/api/{a}/{d}/{s}/kv.json`, live-bound in
 the UI via `data-kv="key"`) and define the HTTP response. All three engines share one
 capability-gated host API enforced with default-deny capabilities + limits in `gui-runtime`,

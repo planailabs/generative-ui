@@ -26,7 +26,7 @@ Interaction flows back via wait_for_backflow / list_backflow:
 
 Handlers (server-side, sandboxed) — publish_surface's `handlers` field
 -----------------------------------------------------------------------
-Attach code that runs WHEN a backflow action arrives (server must run with --enable-handlers).
+Attach code that runs WHEN a backflow action arrives (on by default; server --disable-handlers off).
 A handler NEVER edits the surface. It folds the surface's KV view (which the UI reads) and
 returns the HTTP response body. Bind a KV value in your HTML with: <span data-kv="key"></span>
 (dotted keys allowed: data-kv="user.name"). The UI refreshes bound nodes after each backflow

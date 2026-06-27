@@ -9,3 +9,6 @@ run-artifacts
 
 # WASM guest build output (the built .wasm is committed where it is consumed)
 examples/handler-wasm/target/
+
+# Handler runtime state written under example surfaces (not source)
+artifacts/**/state/

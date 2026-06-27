@@ -32,7 +32,13 @@ nix develop                                   # dev shell
 cargo run -p gui-server -- --artifacts ./artifacts
 # open http://localhost:8080/ for the inspector, or a surface directly:
 # http://localhost:8080/demo/sales/
+# http://localhost:8080/demo/handlers/   sandboxed JS/Lua/WASM handlers (click Bump → counts)
 ```
+
+Surfaces can ship **sandboxed handlers** (JS/Lua/WASM) that run server-side on a backflow
+action — they fold a per-surface KV view (bound in the UI via `data-kv`) and define the
+response. Handlers run **by default** (default-deny capabilities + resource limits); pass
+`--disable-handlers` to turn execution off.
 
 Build a single binary without the shell:
 
