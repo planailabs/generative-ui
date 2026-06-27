@@ -930,7 +930,7 @@ dependencies = [
  "gui-schema",
  "gui-server",
  "rmcp 0.17.0",
- "schemars",
+ "schemars 1.2.1",
  "serde_json",
  "swiftide",
  "tempfile",
@@ -1476,8 +1476,10 @@ dependencies = [
 name = "gui-schema"
 version = "0.1.0"
 dependencies = [
+ "schemars 0.8.22",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
  "tracing",
 ]
@@ -3286,7 +3288,7 @@ dependencies = [
  "pin-project-lite",
  "process-wrap",
  "rmcp-macros 0.17.0",
- "schemars",
+ "schemars 1.2.1",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -3309,7 +3311,7 @@ dependencies = [
  "pastey",
  "pin-project-lite",
  "rmcp-macros 1.8.0",
- "schemars",
+ "schemars 1.2.1",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -3525,6 +3527,18 @@ dependencies = [
 
 [[package]]
 name = "schemars"
+version = "0.8.22"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3fbf2ae1b8bc8e02df939598064d22402220cd5bbcca1c76f7d6a310974d5615"
+dependencies = [
+ "dyn-clone",
+ "schemars_derive 0.8.22",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "schemars"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2b42f36aa1cd011945615b92222f6bf73c599a102a300334cd7f8dbeec726cc"
@@ -3532,9 +3546,21 @@ dependencies = [
  "chrono",
  "dyn-clone",
  "ref-cast",
- "schemars_derive",
+ "schemars_derive 1.2.1",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "schemars_derive"
+version = "0.8.22"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32e265784ad618884abaea0600a9adf15393368d840e0222d101a072f3f7534d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "serde_derive_internals",
+ "syn",
 ]
 
 [[package]]
@@ -3871,7 +3897,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "document-features",
- "schemars",
+ "schemars 1.2.1",
  "serde",
  "serde_json",
  "swiftide-agents",
@@ -3897,7 +3923,7 @@ dependencies = [
  "futures-util",
  "indoc",
  "rmcp 0.17.0",
- "schemars",
+ "schemars 1.2.1",
  "serde",
  "serde_json",
  "strum 0.28.0",
@@ -3927,7 +3953,7 @@ dependencies = [
  "itertools",
  "lazy_static",
  "pin-project",
- "schemars",
+ "schemars 1.2.1",
  "serde",
  "serde_json",
  "strum 0.28.0",
@@ -3985,7 +4011,7 @@ dependencies = [
  "reqwest 0.12.28",
  "reqwest 0.13.4",
  "reqwest-eventsource",
- "schemars",
+ "schemars 1.2.1",
  "serde",
  "serde_json",
  "strum 0.28.0",
@@ -4011,7 +4037,7 @@ dependencies = [
  "darling 0.23.0",
  "proc-macro2",
  "quote",
- "schemars",
+ "schemars 1.2.1",
  "serde",
  "serde_json",
  "syn",

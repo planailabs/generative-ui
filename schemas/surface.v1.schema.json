@@ -1,74 +1,207 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://plan.ai/generative-ui/schemas/surface.v1.schema.json",
-  "title": "Surface manifest (frame.json)",
-  "description": "The manifest an agent writes at artifacts/{agent}/{deck}/{surface}/v/{version}/frame.json. The path is the identity; agent/deck/surface/version are not repeated here.",
-  "type": "object",
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
-  "required": ["schema_version", "title", "alt_text"],
-  "properties": {
-    "schema_version": { "const": "generative-ui/surface.v1" },
-    "title": { "type": "string", "minLength": 1 },
-    "alt_text": { "type": "string", "minLength": 1 },
-    "created_at": { "type": "string", "description": "ISO-8601 timestamp." },
-    "backflow": {
-      "type": "object",
+  "definitions": {
+    "Backflow": {
       "additionalProperties": false,
       "properties": {
-        "actions": { "type": "array", "items": { "type": "string" } }
-      }
-    },
-    "handlers": {
-      "type": "object",
-      "description": "Sandboxed handlers keyed by backflow action. The server runs the matching handler when an interaction with that action arrives (opt-in via --enable-handlers). Handlers never edit the surface; they fold the backflow log into the surface's KV view.",
-      "additionalProperties": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["lang", "entry"],
-        "properties": {
-          "lang": { "enum": ["js", "lua", "wasm"], "description": "Guest engine." },
-          "entry": { "type": "string", "description": "Entry file relative to the version dir, e.g. main.js / main.lua / main.wasm." },
-          "capabilities": {
-            "type": "object",
-            "additionalProperties": false,
-            "description": "Default-deny: an absent field grants nothing.",
-            "properties": {
-              "http": { "type": "array", "items": { "type": "string" }, "description": "Allowed outbound HTTP hosts (exact match). Empty ⇒ no network." },
-              "fs": { "type": "boolean", "description": "Read/write within the surface's jailed state/ dir." },
-              "kv": { "type": "boolean", "description": "Read/write the surface's KV view." }
-            }
+        "actions": {
+          "items": {
+            "type": "string"
           },
-          "limits": {
-            "type": "object",
-            "additionalProperties": false,
-            "description": "Hard limits enforced host-side, identically across engines.",
-            "properties": {
-              "wall_ms": { "type": "integer", "minimum": 0 },
-              "mem_mb": { "type": "integer", "minimum": 0 },
-              "http_calls": { "type": "integer", "minimum": 0 },
-              "resp_kb": { "type": "integer", "minimum": 0 },
-              "fs_kb": { "type": "integer", "minimum": 0 }
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "Capabilities": {
+      "additionalProperties": false,
+      "description": "What a handler is allowed to reach. Default-deny: an absent/empty field grants nothing.",
+      "properties": {
+        "fs": {
+          "default": false,
+          "description": "Read/write within the surface's jailed `state/` dir.",
+          "type": "boolean"
+        },
+        "http": {
+          "description": "Allowed outbound HTTP hosts (exact host match). Empty ⇒ no network.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "kv": {
+          "default": false,
+          "description": "Read/write the surface's KV view.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "HandlerDef": {
+      "additionalProperties": false,
+      "description": "One handler attached to a backflow action: the engine, the entry file (relative to the surface version dir), and the capabilities/limits the sandbox grants it.",
+      "properties": {
+        "capabilities": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/Capabilities"
             }
+          ],
+          "default": {
+            "fs": false,
+            "kv": false
+          }
+        },
+        "entry": {
+          "type": "string"
+        },
+        "lang": {
+          "$ref": "#/definitions/HandlerLang"
+        },
+        "limits": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/Limits"
+            }
+          ],
+          "default": {
+            "fs_kb": 256,
+            "http_calls": 4,
+            "mem_mb": 32,
+            "resp_kb": 512,
+            "wall_ms": 2000
           }
         }
-      }
+      },
+      "required": [
+        "entry",
+        "lang"
+      ],
+      "type": "object"
     },
-    "nav": {
-      "type": "array",
-      "description": "Edges to other surfaces in the deck, by surface slug.",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["to"],
-        "properties": {
-          "to": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
-          "label": { "type": "string" }
+    "HandlerLang": {
+      "description": "Which guest engine runs a handler. The `entry` file extension follows by convention (`main.js` / `main.lua` / `main.wasm`) but `lang` is authoritative.",
+      "enum": [
+        "js",
+        "lua",
+        "wasm"
+      ],
+      "type": "string"
+    },
+    "Limits": {
+      "additionalProperties": false,
+      "description": "Hard resource limits enforced host-side, identically across all engines.",
+      "properties": {
+        "fs_kb": {
+          "default": 256,
+          "description": "Max bytes a single `fs.write` may write.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "http_calls": {
+          "default": 4,
+          "description": "Max `http.fetch` calls per invocation.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "mem_mb": {
+          "default": 32,
+          "description": "Max guest heap.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "resp_kb": {
+          "default": 512,
+          "description": "Max bytes of a single HTTP response body the host will read.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "wall_ms": {
+          "default": 2000,
+          "description": "Wall-clock budget for one invocation.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
         }
-      }
+      },
+      "type": "object"
+    },
+    "NavEdge": {
+      "additionalProperties": false,
+      "description": "A navigation edge from this surface to another surface (by slug) in the deck.",
+      "properties": {
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "to"
+      ],
+      "type": "object"
+    }
+  },
+  "description": "`frame.json` — the surface manifest. Closed top-level shape; new keys go in `metadata`.",
+  "properties": {
+    "alt_text": {
+      "type": "string"
+    },
+    "backflow": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Backflow"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "created_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "handlers": {
+      "additionalProperties": {
+        "$ref": "#/definitions/HandlerDef"
+      },
+      "description": "Sandboxed handlers, keyed by backflow action. The server runs the matching handler when an interaction with that action arrives (opt-in via `--enable-handlers`).",
+      "type": "object"
     },
     "metadata": {
-      "type": "object",
-      "description": "Free-form agent data — the only place unknown keys are allowed."
+      "additionalProperties": true,
+      "type": "object"
+    },
+    "nav": {
+      "items": {
+        "$ref": "#/definitions/NavEdge"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
     }
-  }
+  },
+  "required": [
+    "alt_text",
+    "schema_version",
+    "title"
+  ],
+  "title": "Manifest",
+  "type": "object"
 }

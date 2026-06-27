@@ -165,7 +165,7 @@ impl SurfacePath {
 // ---------------------------------------------------------------------------
 
 /// `frame.json` — the surface manifest. Closed top-level shape; new keys go in `metadata`.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, schemars::JsonSchema, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
     pub schema_version: String,
@@ -206,7 +206,7 @@ impl Manifest {
 
 /// Which guest engine runs a handler. The `entry` file extension follows by convention
 /// (`main.js` / `main.lua` / `main.wasm`) but `lang` is authoritative.
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, schemars::JsonSchema, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum HandlerLang {
     Js,
@@ -216,7 +216,7 @@ pub enum HandlerLang {
 
 /// One handler attached to a backflow action: the engine, the entry file (relative to the
 /// surface version dir), and the capabilities/limits the sandbox grants it.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, schemars::JsonSchema, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct HandlerDef {
     pub lang: HandlerLang,
@@ -228,7 +228,7 @@ pub struct HandlerDef {
 }
 
 /// What a handler is allowed to reach. Default-deny: an absent/empty field grants nothing.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Serialize, Deserialize, schemars::JsonSchema, Clone, Debug, PartialEq, Eq, Default)]
 #[serde(deny_unknown_fields)]
 pub struct Capabilities {
     /// Allowed outbound HTTP hosts (exact host match). Empty ⇒ no network.
@@ -243,7 +243,7 @@ pub struct Capabilities {
 }
 
 /// Hard resource limits enforced host-side, identically across all engines.
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, schemars::JsonSchema, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Limits {
     /// Wall-clock budget for one invocation.
@@ -293,7 +293,7 @@ impl Default for Limits {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+#[derive(Serialize, Deserialize, schemars::JsonSchema, Clone, Debug, PartialEq, Default)]
 #[serde(deny_unknown_fields)]
 pub struct Backflow {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -301,7 +301,7 @@ pub struct Backflow {
 }
 
 /// A navigation edge from this surface to another surface (by slug) in the deck.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, schemars::JsonSchema, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct NavEdge {
     pub to: String,
@@ -314,7 +314,7 @@ pub struct NavEdge {
 // ---------------------------------------------------------------------------
 
 /// `agent.json` — optional agent description at `artifacts/{agent}/agent.json`.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+#[derive(Serialize, Deserialize, schemars::JsonSchema, Clone, Debug, PartialEq, Default)]
 #[serde(deny_unknown_fields)]
 pub struct AgentInfo {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -329,7 +329,7 @@ pub struct AgentInfo {
 
 /// `deck.json` — optional deck wiring: a display name, the entry surface, and a prev/next
 /// `order`. Absent ⇒ a flat deck ordered by first-seen version time.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+#[derive(Serialize, Deserialize, schemars::JsonSchema, Clone, Debug, PartialEq, Default)]
 #[serde(deny_unknown_fields)]
 pub struct DeckManifest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -345,7 +345,7 @@ pub struct DeckManifest {
 // ---------------------------------------------------------------------------
 
 /// A backflow event, written by the server into `{surface}/events/{unix-ms}-{action}.json`.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, schemars::JsonSchema, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Event {
     pub schema_version: String,
@@ -399,7 +399,7 @@ pub fn slugify(s: &str) -> String {
 /// A UI component. Rendered to `<ui-*>` HTML by [`Component::render`]; the same elements
 /// are upgraded live by the browser runtime. The single definition shared across the
 /// stack (agents, MCP, server, browser).
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, schemars::JsonSchema, Clone, Debug, PartialEq)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum Component {
     Heading {
@@ -460,7 +460,7 @@ pub enum Component {
     },
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, schemars::JsonSchema, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct SelectOption {
     pub value: String,
@@ -804,5 +804,68 @@ mod tests {
         assert_eq!(v["children"][1]["type"], "deck-nav");
         let back: Component = serde_json::from_value(v).unwrap();
         assert_eq!(c, back);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// JSON Schema generation — the Rust types above are the single source of truth.
+// The files in `schemas/` are generated from them (drift-gated by the test below).
+// ---------------------------------------------------------------------------
+
+/// Base for the published `$id`s.
+const SCHEMA_ID_BASE: &str = "https://plan.ai/generative-ui/schemas";
+
+fn schema_json(id: &str, root: schemars::schema::RootSchema) -> String {
+    let mut v = serde_json::to_value(&root).expect("schema serializes");
+    if let Some(obj) = v.as_object_mut() {
+        // Inject a stable, dereferenceable id (schemars doesn't emit one).
+        obj.insert("$id".to_string(), serde_json::Value::String(format!("{SCHEMA_ID_BASE}/{id}")));
+    }
+    let mut out = serde_json::to_string_pretty(&v).expect("pretty json");
+    out.push('\n');
+    out
+}
+
+/// The published JSON Schema files, generated from the Rust types — `(filename, contents)`.
+/// The on-disk `schemas/*.json` must equal these (enforced by `committed_schemas_match_types`).
+pub fn json_schemas() -> Vec<(&'static str, String)> {
+    vec![
+        (
+            "surface.v1.schema.json",
+            schema_json("surface.v1.schema.json", schemars::schema_for!(Manifest)),
+        ),
+        (
+            "deck.v1.schema.json",
+            schema_json("deck.v1.schema.json", schemars::schema_for!(DeckManifest)),
+        ),
+        (
+            "event.v1.schema.json",
+            schema_json("event.v1.schema.json", schemars::schema_for!(Event)),
+        ),
+    ]
+}
+
+#[cfg(test)]
+mod schema_files {
+    use super::*;
+
+    /// The committed `schemas/*.json` are generated from the types. Regenerate after changing
+    /// a type with: `UPDATE_SCHEMAS=1 cargo test -p gui-schema committed_schemas_match_types`.
+    #[test]
+    fn committed_schemas_match_types() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../schemas");
+        let update = std::env::var_os("UPDATE_SCHEMAS").is_some();
+        for (name, generated) in json_schemas() {
+            let path = dir.join(name);
+            if update {
+                atomic_write(&path, generated.as_bytes()).unwrap();
+            } else {
+                let committed = std::fs::read_to_string(&path).unwrap_or_default();
+                assert_eq!(
+                    committed, generated,
+                    "{name} is stale — regenerate with `UPDATE_SCHEMAS=1 cargo test -p gui-schema`"
+                );
+            }
+        }
     }
 }

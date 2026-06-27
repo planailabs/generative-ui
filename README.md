@@ -98,9 +98,10 @@ Notes:
 
 | Crate | Role |
 |---|---|
-| `gui-schema` | The on-disk contract: manifests, decks, events, component tree → `<ui-*>` HTML. |
-| `gui-agent` | Agent API: publish surfaces, define decks, read/wait on backflow. |
-| `gui-server` | Discover + serve surfaces, route backflow, SSE, inspector. |
+| `gui-schema` | The on-disk contract: manifests, decks, events, handlers, component tree → `<ui-*>` HTML. Generates `schemas/*.json`. |
+| `gui-agent` | Agent API: publish surfaces (+ handlers), define decks, read/wait on backflow. |
+| `gui-server` | Discover + serve surfaces, route backflow, run handlers, SSE, inspector. |
+| `gui-runtime` | Sandboxed handler engines (JS/Lua/WASM) behind one capability-limited host API. |
 | `gui-mcp` | `rmcp` stdio MCP server — `publish_surface`, `define_deck`, `wait_for_backflow`, … |
 | `gui-cli` | `gui` debug CLI — `index`, `validate`, `deck`, `surface`, `publish`, `backflow`, `watch`. |
 

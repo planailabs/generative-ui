@@ -35,9 +35,10 @@ The **path is the identity** — agent/deck/surface/version are not duplicated i
 
 | Path | What |
 |---|---|
-| `crates/gui-schema` | Shared types: manifest, deck, event, component tree → `<ui-*>` HTML. |
-| `crates/gui-agent` | Agent API: publish surfaces, define decks, read/wait on backflow. |
-| `crates/gui-server` | axum server: discover, serve, route backflow, SSE, inspector. |
+| `crates/gui-schema` | Shared types: manifest, deck, event, handlers, component tree → `<ui-*>` HTML. Source of truth for `schemas/*.json` (generated via schemars). |
+| `crates/gui-agent` | Agent API: publish surfaces (+ handlers), define decks, read/wait on backflow. |
+| `crates/gui-server` | axum server: discover, serve, route backflow, run handlers, SSE, inspector. |
+| `crates/gui-runtime` | Sandboxed handler engines (JS/Lua/WASM) behind one limited host API. |
 | `crates/gui-mcp` | `rmcp` stdio MCP server exposing the agent API as tools. |
 | `crates/gui-cli` | `gui` debug CLI: index/validate/deck/surface/publish/backflow/watch. |
 | `suite/` | Web Components runtime (native ESM, no build) + CSS. |
@@ -52,9 +53,11 @@ nix develop                 # enter the dev shell (pinned Rust + node)
 cargo build                 # build the workspace
 cargo test                  # run all tests (the gate)
 cargo run -p gui-server -- --artifacts ./artifacts
+cargo run -p gui-server -- --artifacts ./artifacts --enable-handlers  # run surface handlers
 cargo run -p gui-cli -- index ./artifacts
 nix flake check             # cargo test + clippy as flake checks
 nix build .#gui-server      # build a single binary
+UPDATE_SCHEMAS=1 cargo test -p gui-schema   # regenerate schemas/*.json from the Rust types
 ```
 
 ## Skills
@@ -63,6 +66,17 @@ nix build .#gui-server      # build a single binary
   the `gui-mcp` tools to show users interactive UI and react to their input.
 - [`.agents/skills/browser-verify`](.agents/skills/browser-verify/SKILL.md) — verify surfaces
   render correctly in headless chromium after changing the suite runtime.
+
+## Handlers (sandboxed backflow logic)
+
+A surface may declare `handlers` in `frame.json` (`action → {lang, entry, capabilities,
+limits}`) — code (`main.js`/`main.lua`/`main.wasm`) the server runs when that backflow
+action arrives (opt-in: `--enable-handlers`). Handlers **never edit the surface**; they fold
+the surface's KV view (`state/kv.json`, served at `/api/{a}/{d}/{s}/kv.json`, live-bound in
+the UI via `data-kv="key"`) and define the HTTP response. All three engines share one
+capability-gated host API (`host.kv/http/fs/log/response/responseCode`) enforced with
+default-deny capabilities + limits in `gui-runtime`. The WASM guest lives in
+`examples/handler-wasm` (committed `.wasm`; rebuild per its README).
 
 ## Hard rules
 

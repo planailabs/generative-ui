@@ -8,5 +8,9 @@ description = "Shared types for the Generative UI Suite: surface manifests, deck
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+schemars.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
