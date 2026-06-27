@@ -1,0 +1,36 @@
+[package]
+name = "direct-access"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Direct-access demo: HTTP server + a swiftide agent in one binary, driving interactive UI through the directory."
+
+[lib]
+name = "direct_access"
+path = "src/lib.rs"
+
+[[bin]]
+name = "direct-access"
+path = "src/main.rs"
+
+[dependencies]
+gui-schema.workspace = true
+gui-agent.workspace = true
+gui-server.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+clap.workspace = true
+async-trait = "0.1"
+swiftide = { version = "0.32.1", features = ["swiftide-agents"] }
+# Real OpenAI(-compatible) backend is opt-in: `--features openai`. swiftide 0.32's openai
+# integration pins against a specific async-openai API; the version may need adjusting for
+# your toolchain. The default build (and tests) use the deterministic MockLlm, which needs
+# no network and exercises the full create→wait→respond loop.
+async-openai = { version = "0.41", optional = true }
+
+[features]
+openai = ["swiftide/openai", "dep:async-openai"]
+
+[dev-dependencies]
+tempfile.workspace = true

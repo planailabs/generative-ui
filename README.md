@@ -66,6 +66,27 @@ The MCP server (`cargo run -p gui-mcp -- --artifacts ./artifacts`) exposes the s
 authoring/awaiting flow to any MCP-speaking agent (`publish_surface`, `define_deck`,
 `wait_for_backflow`, …).
 
+## Direct access (server + agent in one binary)
+
+The `direct-access` example runs the HTTP server and a [swiftide](https://swiftide.rs)
+LLM agent **in one process** (each is a separate library, just invoked together). The agent
+conducts a whole conversation through interactive UI — publish a prompt surface → wait for
+the user's submission → ask the LLM → republish with the answer (the view re-renders live).
+
+```sh
+cargo run -p direct-access -- --artifacts ./run --mock        # deterministic, offline
+# open the printed URL (http://127.0.0.1:8080/assistant/chat/) and chat
+
+# Real / OpenAI-compatible backend (opt-in feature; custom base URL supported):
+OPENAI_API_KEY=… cargo run -p direct-access --features openai -- \
+    --model gpt-4o-mini --base-url https://your-endpoint/v1
+```
+
+The default build uses a built-in mock LLM (no network) and is what the tests exercise.
+The real backend is gated behind `--features openai`; swiftide 0.32's OpenAI integration
+pins a specific `async-openai` API, so that version may need adjusting for your toolchain.
+The session loop is generic over any swiftide `ChatCompletion`, so the backend is pluggable.
+
 ## Crates
 
 | Crate | Role |
