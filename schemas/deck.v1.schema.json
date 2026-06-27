@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://plan.ai/generative-ui/schemas/deck.v1.schema.json",
+  "title": "Deck manifest (deck.json)",
+  "description": "Optional deck wiring at artifacts/{agent}/{deck}/deck.json. Declares a display name, the entry surface, and a prev/next order. Absent ⇒ flat deck ordered by first-seen version time.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "name": { "type": "string" },
+    "entry": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "order": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" }
+    }
+  }
+}
