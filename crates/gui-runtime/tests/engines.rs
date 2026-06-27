@@ -17,7 +17,7 @@ use serde_json::{json, Map, Value};
 struct Fixture {
     lang: HandlerLang,
     entry: &'static str,
-    source: &'static str,
+    source: &'static [u8],
 }
 
 fn event(action: &str, value: Value) -> Event {
@@ -81,7 +81,7 @@ fn http_stub() -> (String, std::thread::JoinHandle<()>) {
 const JS_FULL: Fixture = Fixture {
     lang: HandlerLang::Js,
     entry: "main.js",
-    source: r#"
+    source: br#"
 function handle(event, host) {
   // kv fold
   host.kv.set("hits", (host.kv.get("hits") || 0) + 1);
@@ -100,14 +100,14 @@ function handle(event, host) {
 const JS_LOOP: Fixture = Fixture {
     lang: HandlerLang::Js,
     entry: "main.js",
-    source: "function handle(e,h){ while(true){} }",
+    source: b"function handle(e,h){ while(true){} }",
 };
 
 #[cfg(feature = "js")]
 const JS_COUNTER: Fixture = Fixture {
     lang: HandlerLang::Js,
     entry: "main.js",
-    source: "function handle(e,h){ h.kv.set('hits',(h.kv.get('hits')||0)+1); return {hits:h.kv.get('hits')}; }",
+    source: b"function handle(e,h){ h.kv.set('hits',(h.kv.get('hits')||0)+1); return {hits:h.kv.get('hits')}; }",
 };
 
 /// The full host API works through the engine: kv fold + jailed fs + allowlisted http + log.
@@ -163,7 +163,7 @@ fn assert_wall_clock_abort(fx: &Fixture) {
 const LUA_FULL: Fixture = Fixture {
     lang: HandlerLang::Lua,
     entry: "main.lua",
-    source: r#"
+    source: br#"
 return function(event, host)
   host.kv.set("hits", (host.kv.get("hits") or 0) + 1)
   host.fs.write("note.txt", "v=" .. tostring(event.value.n))
@@ -179,14 +179,14 @@ end
 const LUA_LOOP: Fixture = Fixture {
     lang: HandlerLang::Lua,
     entry: "main.lua",
-    source: "return function(e, h) while true do end end",
+    source: b"return function(e, h) while true do end end",
 };
 
 #[cfg(feature = "lua")]
 const LUA_COUNTER: Fixture = Fixture {
     lang: HandlerLang::Lua,
     entry: "main.lua",
-    source: "return function(e, h) h.kv.set('hits', (h.kv.get('hits') or 0) + 1); return { hits = h.kv.get('hits') } end",
+    source: b"return function(e, h) h.kv.set('hits', (h.kv.get('hits') or 0) + 1); return { hits = h.kv.get('hits') } end",
 };
 
 #[cfg(feature = "js")]
@@ -213,7 +213,7 @@ mod js {
         const FX: Fixture = Fixture {
             lang: HandlerLang::Js,
             entry: "main.js",
-            source: "function handle(e,h){ h.response(h.responseCode.NOT_FOUND, {error:'nope'}); return {ignored:true}; }",
+            source: b"function handle(e,h){ h.response(h.responseCode.NOT_FOUND, {error:'nope'}); return {ignored:true}; }",
         };
         let ev = event("go", json!(null));
         let out = run(&FX, Capabilities::default(), Limits::default(), &ev, Map::new()).unwrap();
@@ -255,7 +255,7 @@ mod lua {
         const FX: Fixture = Fixture {
             lang: HandlerLang::Lua,
             entry: "main.lua",
-            source: "return function(e, h) h.response(h.responseCode.NOT_FOUND, { error = 'nope' }); return { ignored = true } end",
+            source: b"return function(e, h) h.response(h.responseCode.NOT_FOUND, { error = 'nope' }); return { ignored = true } end",
         };
         let ev = event("go", json!(null));
         let out = run(&FX, Capabilities::default(), Limits::default(), &ev, Map::new()).unwrap();
@@ -267,6 +267,50 @@ mod lua {
     fn undeclared_capability_is_denied() {
         let ev = event("go", json!(null));
         let err = run(&LUA_COUNTER, Capabilities::default(), Limits::default(), &ev, Map::new())
+            .unwrap_err();
+        assert!(matches!(err, HandlerError::Guest(_)), "got {err:?}");
+    }
+}
+
+#[cfg(feature = "wasm")]
+const WASM_HANDLER: Fixture = Fixture {
+    lang: HandlerLang::Wasm,
+    entry: "main.wasm",
+    // Prebuilt guest (examples/handler-wasm) committed so no wasm toolchain is needed to test.
+    source: include_bytes!("fixtures/handler.wasm"),
+};
+
+#[cfg(feature = "wasm")]
+mod wasm {
+    use super::*;
+
+    #[test]
+    fn full_host_api() {
+        assert_full_api(&WASM_HANDLER);
+    }
+
+    #[test]
+    fn fold_accumulates() {
+        assert_fold_accumulates(&WASM_HANDLER);
+    }
+
+    #[test]
+    fn wall_clock_abort() {
+        assert_wall_clock_abort(&WASM_HANDLER);
+    }
+
+    #[test]
+    fn explicit_response_with_status_code() {
+        let ev = event("respond", json!(null));
+        let out = run(&WASM_HANDLER, Capabilities::default(), Limits::default(), &ev, Map::new()).unwrap();
+        assert_eq!(out.response.status, 404, "host.responseCode.NOT_FOUND via status_codes import");
+        assert_eq!(out.response.body, json!({ "error": "nope" }));
+    }
+
+    #[test]
+    fn undeclared_capability_is_denied() {
+        let ev = event("bump", json!(null));
+        let err = run(&WASM_HANDLER, Capabilities::default(), Limits::default(), &ev, Map::new())
             .unwrap_err();
         assert!(matches!(err, HandlerError::Guest(_)), "got {err:?}");
     }

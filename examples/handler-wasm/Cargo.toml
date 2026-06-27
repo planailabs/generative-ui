@@ -1,0 +1,21 @@
+# WASM handler guest — built ONLY for wasm32-unknown-unknown and committed as a `.wasm`
+# fixture/example so the host needs no wasm toolchain to test or serve. Rebuild with:
+#   cargo build --manifest-path examples/handler-wasm/Cargo.toml --target wasm32-unknown-unknown --release
+# then copy target/wasm32-unknown-unknown/release/handler_wasm.wasm to the consumers (see README).
+[package]
+name = "handler-wasm"
+edition = "2021"
+version = "0.1.0"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+serde_json = "1"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true

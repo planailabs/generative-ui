@@ -42,6 +42,8 @@ pub fn engine_for(lang: HandlerLang) -> Result<Box<dyn Engine>, HandlerError> {
         HandlerLang::Lua => Ok(Box::new(lua::LuaEngine::new())),
         #[cfg(feature = "wasm")]
         HandlerLang::Wasm => Ok(Box::new(wasm::WasmEngine::new())),
+        // Reachable only in partial-feature builds (a lang whose engine wasn't compiled in).
+        #[allow(unreachable_patterns)]
         other => Err(HandlerError::EngineUnavailable(other)),
     }
 }

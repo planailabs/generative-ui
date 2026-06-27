@@ -1,6 +1,9 @@
 [workspace]
 resolver = "2"
 members = ["crates/*", "examples/*"]
+# The WASM handler guest is built only for wasm32-unknown-unknown (its own workspace), so it
+# must not be pulled into the host workspace build.
+exclude = ["examples/handler-wasm"]
 
 [workspace.package]
 edition = "2024"

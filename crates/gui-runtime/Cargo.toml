@@ -10,13 +10,14 @@ license.workspace = true
 # feature gains its `dep:<crate>` in the stage that implements it.
 # Engines added per stage; each gains its line in `default` as it lands so the workspace
 # builds the full set. (lua, wasm to follow.)
-default = ["js", "lua"]
+default = ["js", "lua", "wasm"]
 js = ["dep:rquickjs"]
 lua = ["dep:mlua"]
-wasm = []
+wasm = ["dep:wasmtime"]
 
 [dependencies]
 gui-schema = { workspace = true }
+anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -26,6 +27,7 @@ url = "2"
 http = "1"
 rquickjs = { version = "0.9", optional = true }
 mlua = { version = "0.10", features = ["luau", "vendored", "serialize"], optional = true }
+wasmtime = { version = "45", optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
