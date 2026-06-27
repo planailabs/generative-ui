@@ -12,10 +12,11 @@ use axum::{
     extract::{Path, State},
     http::{header, StatusCode},
     response::{Html, IntoResponse, Json, Response},
-    routing::get,
+    routing::{get, post},
     Router,
 };
-use gui_schema::{SurfacePath, Version, DEFAULT_DECK};
+use gui_schema::{atomic_write, Event, SurfacePath, Version, DEFAULT_DECK, EVENT_SCHEMA_VERSION};
+use serde::Deserialize;
 
 use crate::discovery::Index;
 use crate::{api, render};
@@ -65,6 +66,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/{agent}/{deck}/{surface}/v/{version}/", get(version_page))
         .route("/{agent}/{deck}/{surface}/", get(live_page))
+        .route("/backflow/{agent}/{deck}/{surface}", post(backflow))
         .route("/{agent}/{seg}/", get(two_seg))
         .route("/{agent}/", get(agent_page))
         .with_state(state)
@@ -201,6 +203,65 @@ async fn agent_page(State(st): State<AppState>, Path(agent): Path<String>) -> Re
     }
     body.push_str("</ul>");
     Html(format!("<!doctype html><meta charset=utf-8><body>{body}")).into_response()
+}
+
+/// Body of a backflow POST. Unknown fields (e.g. the client `timestamp`) are ignored; the
+/// server stamps its own `received_at`.
+#[derive(Deserialize)]
+struct BackflowInput {
+    action: String,
+    #[serde(default)]
+    component: Option<String>,
+    #[serde(default)]
+    value: serde_json::Value,
+    #[serde(default)]
+    version: Option<String>,
+}
+
+/// Current time as `(unix_millis, rfc3339_string)`.
+fn now() -> (u64, String) {
+    use time::{format_description::well_known::Rfc3339, OffsetDateTime};
+    let now = OffsetDateTime::now_utc();
+    let ms = (now.unix_timestamp_nanos() / 1_000_000) as u64;
+    (ms, now.format(&Rfc3339).unwrap_or_default())
+}
+
+/// Backflow: write a user interaction back into the surface's `events/` directory.
+async fn backflow(
+    State(st): State<AppState>,
+    Path((agent, deck, surface)): Path<(String, String, String)>,
+    Json(input): Json<BackflowInput>,
+) -> Response {
+    let Ok(path) = SurfacePath::new(agent, deck, surface) else {
+        return not_found();
+    };
+    let idx = st.index.load_full();
+    let Some(found) = idx.surface(&path) else {
+        return not_found();
+    };
+
+    let (ms, iso) = now();
+    let event = Event {
+        schema_version: EVENT_SCHEMA_VERSION.to_string(),
+        action: input.action,
+        component: input.component,
+        value: input.value,
+        surface: path.id(),
+        version: input.version.or_else(|| Some(found.live().version.to_string())),
+        received_at: iso,
+    };
+    let target = path.events_dir(&st.root).join(event.file_name(ms));
+    let bytes = serde_json::to_vec_pretty(&event).expect("event serializes");
+    match atomic_write(&target, &bytes) {
+        Ok(()) => (
+            StatusCode::ACCEPTED,
+            Json(serde_json::json!({ "ok": true, "event": target.file_name().and_then(|s| s.to_str()) })),
+        )
+            .into_response(),
+        Err(e) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, Html(format!("write failed: {e}"))).into_response()
+        }
+    }
 }
 
 async fn asset(

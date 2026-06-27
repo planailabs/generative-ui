@@ -166,6 +166,44 @@ async fn routes_end_to_end() {
 }
 
 #[tokio::test]
+async fn backflow_writes_event_into_directory() {
+    let tmp = tempfile::tempdir().unwrap();
+    fixture(tmp.path());
+    let base = start(tmp.path()).await;
+    let http = reqwest::Client::new();
+
+    let res = http
+        .post(format!("{base}/backflow/demo/main/sales"))
+        .json(&serde_json::json!({"action":"drill_down","component":"ui-button","value":{"region":"emea"}}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 202);
+
+    let events_dir = tmp.path().join("demo/main/sales/events");
+    let entries: Vec<_> = fs::read_dir(&events_dir).unwrap().filter_map(|e| e.ok()).collect();
+    assert_eq!(entries.len(), 1, "exactly one event file written");
+    let name = entries[0].file_name().to_string_lossy().to_string();
+    assert!(name.ends_with("-drill-down.json"), "slugified name: {name}");
+
+    let ev: serde_json::Value = serde_json::from_slice(&fs::read(entries[0].path()).unwrap()).unwrap();
+    assert_eq!(ev["action"], "drill_down");
+    assert_eq!(ev["surface"], "demo/main/sales");
+    assert_eq!(ev["version"], "200", "stamped with the live version");
+    assert_eq!(ev["schema_version"], "generative-ui/event.v1");
+
+    // Backflow to an unknown surface is rejected (no stray directories created).
+    let bad = http
+        .post(format!("{base}/backflow/demo/main/nope"))
+        .json(&serde_json::json!({"action":"x"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(bad.status(), 404);
+    assert!(!tmp.path().join("demo/main/nope").exists());
+}
+
+#[tokio::test]
 async fn serves_suite_as_esm() {
     let tmp = tempfile::tempdir().unwrap();
     let base = start(tmp.path()).await;

@@ -7,9 +7,35 @@
 //! renders to `<ui-*>` HTML. Reserved manifest keys are a closed set
 //! (`deny_unknown_fields`); free-form data lives only under `metadata`.
 
+use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
+
+static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Atomically write `bytes` to `path`: write a uniquely-named temp file in the same
+/// directory, then `rename` it over the target. Concurrent readers (agents polling the
+/// directory) never observe a partial file. Parent directories are created as needed.
+pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?;
+    std::fs::create_dir_all(parent)?;
+    let fname = path.file_name().and_then(|s| s.to_str()).unwrap_or("tmp");
+    let n = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let tmp = parent.join(format!(".{fname}.tmp.{}.{n}", std::process::id()));
+    std::fs::write(&tmp, bytes)?;
+    // rename is atomic within a filesystem; clean up the temp file on failure.
+    match std::fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
+}
 
 pub const SURFACE_SCHEMA_VERSION: &str = "generative-ui/surface.v1";
 pub const EVENT_SCHEMA_VERSION: &str = "generative-ui/event.v1";
@@ -590,6 +616,22 @@ mod tests {
             form.render(),
             r#"<ui-form data-action="signup"><ui-input name="email" label="Email" type="email"></ui-input></ui-form>"#
         );
+    }
+
+    #[test]
+    fn atomic_write_creates_dirs_and_no_temp_left() {
+        let tmp = std::env::temp_dir().join(format!("gui-aw-{}", std::process::id()));
+        let target = tmp.join("nested/events/1-x.json");
+        atomic_write(&target, b"{}").unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"{}");
+        // No leftover temp files in the directory.
+        let leftovers: Vec<_> = std::fs::read_dir(target.parent().unwrap())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".tmp."))
+            .collect();
+        assert!(leftovers.is_empty(), "temp file left behind");
+        std::fs::remove_dir_all(&tmp).ok();
     }
 
     #[test]
