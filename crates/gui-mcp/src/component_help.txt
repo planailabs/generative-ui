@@ -1,5 +1,6 @@
-Generative UI components — pass `components` to publish_surface as a JSON array of nodes,
-each `{ "type": "<name>", ...fields }`. Nesting uses a `children` array.
+Generative UI components — pass `components_json` to publish_surface as a JSON **string**
+containing an array of nodes, each `{ "type": "<name>", ...fields }`. Nesting uses a
+`children` array. (It is a string, e.g. "[{\"type\":\"heading\",\"text\":\"Hi\"}]".)
 
 heading   { "type": "heading", "text": "...", "level": 1-3 (default 2) }
 text      { "type": "text", "text": "..." }

@@ -29,6 +29,8 @@ async-trait = "0.1"
 swiftide = { git = "https://github.com/bosun-ai/swiftide", features = ["swiftide-agents", "mcp"] }
 # rmcp client to connect to the gui-mcp subprocess (must match swiftide's rmcp 0.17).
 rmcp = { version = "0.17", default-features = false, features = ["client", "transport-child-process"] }
+# For building tool specs from MCP schemas (match swiftide's schemars 1.0).
+schemars = "1"
 # Real OpenAI(-compatible) backend is opt-in: `--features openai`. We only use it to build a
 # client with a custom base URL; `chat-completion` exposes Client + config.
 # Pin to the version git swiftide's lockfile uses; >=0.33 otherwise resolves to 0.41 which

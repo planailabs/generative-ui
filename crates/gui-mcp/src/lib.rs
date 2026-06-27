@@ -49,14 +49,15 @@ pub struct PublishParams {
     pub title: String,
     /// Accessibility text describing the surface.
     pub alt_text: String,
-    /// A component tree: a JSON array of `{ "type": "...", ... }` objects. See `component_help`.
-    pub components: Option<serde_json::Value>,
+    /// A component tree as a JSON **string**: a JSON array of `{ "type": "...", ... }`
+    /// objects (see `component_help`). A string keeps the tool schema strict-compatible.
+    pub components_json: Option<String>,
     /// Raw HTML body instead of a component tree (escape hatch).
     pub html: Option<String>,
     /// Navigation edges to sibling surfaces.
     pub nav: Option<Vec<NavParam>>,
-    /// Free-form metadata object.
-    pub metadata: Option<serde_json::Value>,
+    /// Free-form metadata as a JSON **string** (a JSON object).
+    pub metadata_json: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -137,17 +138,19 @@ impl GuiServer {
         let mut b = SurfaceBuilder::new(p.title, p.alt_text);
         if let Some(html) = p.html {
             b = b.html(html);
-        } else if let Some(components) = p.components {
-            let comps: Vec<Component> = serde_json::from_value(components)
-                .map_err(|e| invalid(format!("invalid components: {e}")))?;
+        } else if let Some(components) = p.components_json {
+            let comps: Vec<Component> = serde_json::from_str(&components)
+                .map_err(|e| invalid(format!("invalid components_json: {e}")))?;
             b = b.components(comps);
         }
         for edge in p.nav.unwrap_or_default() {
             b = b.nav(edge.to, edge.label.as_deref());
         }
-        if let Some(obj) = p.metadata.as_ref().and_then(|m| m.as_object()) {
+        if let Some(metadata) = p.metadata_json {
+            let obj: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&metadata)
+                .map_err(|e| invalid(format!("invalid metadata_json: {e}")))?;
             for (k, v) in obj {
-                b = b.meta(k.clone(), v.clone());
+                b = b.meta(k, v);
             }
         }
         let version = self

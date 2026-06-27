@@ -741,6 +741,7 @@ dependencies = [
  "gui-schema",
  "gui-server",
  "rmcp 0.17.0",
+ "schemars",
  "serde_json",
  "swiftide",
  "tempfile",
