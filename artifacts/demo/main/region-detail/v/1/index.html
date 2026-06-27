@@ -1,9 +1,11 @@
 <ui-heading level="1">Regions</ui-heading>
 <ui-text>Filter the dashboard to a single region.</ui-text>
-<ui-select name="region" label="Region">
-  <option value="emea">EMEA</option>
-  <option value="amer">Americas</option>
-  <option value="apac">APAC</option>
-</ui-select>
-<ui-button data-action="apply">Apply</ui-button>
+<ui-form data-action="apply" submit-label="Apply">
+  <ui-select name="region" label="Region">
+    <option value="emea">EMEA</option>
+    <option value="amer">Americas</option>
+    <option value="apac">APAC</option>
+  </ui-select>
+</ui-form>
+<ui-text>Showing <span data-kv="region">—</span> · revenue <span data-kv="region_revenue">—</span></ui-text>
 <ui-deck-nav></ui-deck-nav>

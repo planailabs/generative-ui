@@ -1,8 +1,10 @@
 {
   "schema_version": "generative-ui/surface.v1",
   "title": "Regions",
-  "alt_text": "Per-region breakdown with a region selector",
+  "alt_text": "Per-region breakdown with a region selector that filters the figures",
   "created_at": "2026-06-27T10:00:00Z",
-  "backflow": { "actions": ["apply"] },
+  "handlers": {
+    "apply": { "lang": "js", "entry": "main.js", "capabilities": { "kv": true } }
+  },
   "nav": [{ "to": "sales", "label": "Back to Sales" }]
 }

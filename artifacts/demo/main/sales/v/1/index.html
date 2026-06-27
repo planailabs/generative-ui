@@ -1,7 +1,8 @@
 <ui-heading level="1">Sales</ui-heading>
-<ui-text>Revenue is up 12% this week.</ui-text>
+<ui-text>Revenue <span data-kv="revenue">$120,000</span> · up <span data-kv="change_pct">12%</span> this week.</ui-text>
 <ui-card>
   <ui-text>Pull the latest numbers from the source system.</ui-text>
   <ui-button data-action="refresh">Refresh</ui-button>
+  <ui-text class="gui-muted">Refreshed <span data-kv="refreshes">0</span>× · last update <span data-kv="updated">—</span></ui-text>
 </ui-card>
 <ui-deck-nav></ui-deck-nav>
