@@ -61,6 +61,8 @@ nix build .#gui-server      # build a single binary
 
 - [`.agents/skills/authoring-ui`](.agents/skills/authoring-ui/SKILL.md) — how an agent uses
   the `gui-mcp` tools to show users interactive UI and react to their input.
+- [`.agents/skills/browser-verify`](.agents/skills/browser-verify/SKILL.md) — verify surfaces
+  render correctly in headless chromium after changing the suite runtime.
 
 ## Hard rules
 
@@ -70,3 +72,26 @@ nix build .#gui-server      # build a single binary
 - **Cross-OS.** Build paths with `Path::join`; no hardcoded separators or `/tmp`.
 - **Native ESM only** in the suite. No bundler, no transpile, no CommonJS.
 - **Commit closes every stage** once it builds and tests pass (Conventional Commits).
+
+## Keep in sync (update tasks)
+
+These things are coupled — when you change one, update the others in the **same** change:
+
+- **Add/modify a `<ui-*>` component** → update all of: `crates/gui-schema` `Component` enum +
+  HTML renderer; `suite/runtime.js` (the custom element **and** the plain-HTML→component
+  rewrite map); `suite/suite.css` (styling); `crates/gui-mcp/src/component_help.txt`;
+  `.agents/skills/authoring-ui/SKILL.md`; and **`artifacts/`** (showcase it in the demo deck).
+- **Update `artifacts/`** whenever components, the suite, or the manifest schema change, so the
+  committed demo deck stays valid and representative. Then browser-verify it.
+- **Edit `suite/` (runtime/CSS)** → rebuild `gui-server` (the suite is embedded via
+  `include_str!`) and **browser-verify** (Rust tests don't render). The plain-HTML rewrite must
+  run *before* `customElements.define`.
+- **Change the directory schema** (manifest/event/deck/path) → update `schemas/*.schema.json`,
+  `gui-schema` types + discovery, and the schema/vocabulary in this file and `README.md`.
+- **Change routes** → update the route lists in `README.md` and any references here.
+- **Change an MCP tool** (`gui-mcp`) → update `component_help.txt`, the `authoring-ui` skill,
+  the `gui-mcp` tests, and `examples/direct-access`'s `MockLlm`.
+- **Add a binary or crate** → update `flake.nix` (`cargoBuildFlags`, `packages`, `apps`), the
+  Layout table here, and the crates table in `README.md`.
+- **Bump the `direct-access` swiftide git rev** → recompute and update the `outputHashes` entry
+  in `flake.nix` (`nix-prefetch-git --url … --rev …`).

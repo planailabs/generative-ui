@@ -71,8 +71,12 @@
             pkgs.rust-analyzer
             pkgs.cargo-watch
             pkgs.nodejs_22
+            pkgs.chromium # headless browser verification (see browser-verify skill)
           ];
           RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
+          # Point browser tooling at the dev shell's chromium.
+          CHROME_BIN = "${pkgs.chromium}/bin/chromium";
+          PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = "${pkgs.chromium}/bin/chromium";
         };
       });
 }

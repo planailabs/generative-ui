@@ -222,15 +222,6 @@ class UiHeading extends HTMLElement {
   }
 }
 
-customElements.define("ui-button", UiButton);
-customElements.define("ui-input", UiInput);
-customElements.define("ui-select", UiSelect);
-customElements.define("ui-checkbox", UiCheckbox);
-customElements.define("ui-form", UiForm);
-customElements.define("ui-link", UiLink);
-customElements.define("ui-deck-nav", UiDeckNav);
-customElements.define("ui-heading", UiHeading);
-
 // Live rewrite: translate ordinary HTML elements into the matching <ui-*> components, so an
 // author (or agent) can write plain HTML and still get styling + backflow wiring. Authors are
 // encouraged to use the <ui-*> components directly; this is a convenience translation.
@@ -278,7 +269,19 @@ function rewritePlainHtml(root) {
   );
 }
 
+// Rewrite authored plain HTML BEFORE defining the components, so the components' own internal
+// elements (e.g. the inner <button> that <ui-button> renders) are never re-processed — which
+// would otherwise nest a <ui-button> inside a <ui-button> and render the control twice.
 rewritePlainHtml(document.body);
+
+customElements.define("ui-button", UiButton);
+customElements.define("ui-input", UiInput);
+customElements.define("ui-select", UiSelect);
+customElements.define("ui-checkbox", UiCheckbox);
+customElements.define("ui-form", UiForm);
+customElements.define("ui-link", UiLink);
+customElements.define("ui-deck-nav", UiDeckNav);
+customElements.define("ui-heading", UiHeading);
 
 // Streamable views: re-render in realtime when *this* surface gets a new version (e.g. an
 // agent regenerates it in response to backflow). Reloads only on a version change, not on
