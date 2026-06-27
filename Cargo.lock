@@ -506,7 +506,7 @@ dependencies = [
  "document-features",
  "idna",
  "indexmap",
- "log",
+ "log 0.4.33",
  "serde",
  "serde_derive",
  "serde_json",
@@ -624,7 +624,7 @@ dependencies = [
  "gimli",
  "hashbrown 0.17.1",
  "libm",
- "log",
+ "log 0.4.33",
  "pulley-interpreter",
  "regalloc2",
  "rustc-hash",
@@ -681,7 +681,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "efa2826c80dff1d93b19b3cfbcaf9fae44c78d739a98d146dd5bd89c51e14367"
 dependencies = [
  "cranelift-codegen",
- "log",
+ "log 0.4.33",
  "smallvec",
  "target-lexicon",
 ]
@@ -1388,7 +1388,7 @@ checksum = "52dfc19153a48bde0cbd630453615c8151bce3a5adfac7a0aebfbf0a1e1f57e3"
 dependencies = [
  "aho-corasick",
  "bstr",
- "log",
+ "log 0.4.33",
  "regex-automata",
  "regex-syntax",
 ]
@@ -1496,8 +1496,10 @@ dependencies = [
  "gui-runtime",
  "gui-schema",
  "mime_guess",
+ "mustache",
  "notify",
  "reqwest 0.12.28",
+ "rust-embed",
  "serde",
  "serde_json",
  "tempfile",
@@ -1574,7 +1576,7 @@ dependencies = [
  "http",
  "indicatif",
  "libc",
- "log",
+ "log 0.4.33",
  "native-tls",
  "rand 0.9.4",
  "reqwest 0.12.28",
@@ -1719,7 +1721,7 @@ dependencies = [
  "core-foundation-sys",
  "iana-time-zone-haiku",
  "js-sys",
- "log",
+ "log 0.4.33",
  "wasm-bindgen",
  "windows-core",
 ]
@@ -1902,7 +1904,7 @@ checksum = "b915661dd01db3f05050265b2477bcc6527b3792388e2749b41623cc592be67d"
 dependencies = [
  "crossbeam-deque",
  "globset",
- "log",
+ "log 0.4.33",
  "memchr",
  "regex-automata",
  "same-file",
@@ -2008,7 +2010,7 @@ checksum = "6b996fe614c41395cdaedf3cf408a9534851090959d90d54a535f675550b64b1"
 dependencies = [
  "anyhow",
  "ittapi-sys",
- "log",
+ "log 0.4.33",
 ]
 
 [[package]]
@@ -2030,7 +2032,7 @@ dependencies = [
  "combine",
  "jni-macros",
  "jni-sys",
- "log",
+ "log 0.4.33",
  "simd_cesu8",
  "thiserror 2.0.18",
  "walkdir",
@@ -2178,6 +2180,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "224399e74b87b5f3557511d98dff8b14089b3dadafcab6bb93eab67d3aace965"
 dependencies = [
  "scopeguard",
+]
+
+[[package]]
+name = "log"
+version = "0.3.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e19e8d5c34a3e0e2223db8e060f9e8264aeeb5c5fc64a4ee9965c062211c024b"
+dependencies = [
+ "log 0.4.33",
 ]
 
 [[package]]
@@ -2334,7 +2345,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4a650543ca06a924e8b371db273b2756685faae30f8487da1b56505a8f78b0c"
 dependencies = [
  "libc",
- "log",
+ "log 0.4.33",
  "wasi",
  "windows-sys 0.48.0",
 ]
@@ -2406,13 +2417,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "mustache"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51956ef1c5d20a1384524d91e616fb44dfc7d8f249bf696d49c97dd3289ecab5"
+dependencies = [
+ "log 0.3.9",
+ "serde",
+]
+
+[[package]]
 name = "native-tls"
 version = "0.2.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "465500e14ea162429d264d44189adc38b199b62b1c21eea9f69e4b73cb03bbf2"
 dependencies = [
  "libc",
- "log",
+ "log 0.4.33",
  "openssl",
  "openssl-probe",
  "openssl-sys",
@@ -2472,7 +2493,7 @@ dependencies = [
  "inotify",
  "kqueue",
  "libc",
- "log",
+ "log 0.4.33",
  "mio 0.8.11",
  "walkdir",
  "windows-sys 0.48.0",
@@ -2881,7 +2902,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b04adf8f93264685f2c70a3edb8f828c791e71b22659253319c33f29d1165aef"
 dependencies = [
  "cranelift-bitset",
- "log",
+ "log 0.4.33",
  "pulley-macros",
  "wasmtime-internal-core",
 ]
@@ -3129,7 +3150,7 @@ dependencies = [
  "allocator-api2",
  "bumpalo",
  "hashbrown 0.17.1",
- "log",
+ "log 0.4.33",
  "rustc-hash",
  "smallvec",
 ]
@@ -3183,7 +3204,7 @@ dependencies = [
  "hyper-tls",
  "hyper-util",
  "js-sys",
- "log",
+ "log 0.4.33",
  "mime",
  "mime_guess",
  "native-tls",
@@ -3227,7 +3248,7 @@ dependencies = [
  "hyper-rustls",
  "hyper-util",
  "js-sys",
- "log",
+ "log 0.4.33",
  "percent-encoding",
  "pin-project-lite",
  "rustls",
@@ -3375,6 +3396,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "rust-embed"
+version = "8.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04113cb9355a377d83f06ef1f0a45b8ab8cd7d8b1288160717d66df5c7988d27"
+dependencies = [
+ "rust-embed-impl",
+ "rust-embed-utils",
+ "walkdir",
+]
+
+[[package]]
+name = "rust-embed-impl"
+version = "8.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da0902e4c7c8e997159ab384e6d0fc91c221375f6894346ae107f47dd0f3ccaa"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "rust-embed-utils",
+ "syn",
+ "walkdir",
+]
+
+[[package]]
+name = "rust-embed-utils"
+version = "8.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5bcdef0be6fe7f6fa333b1073c949729274b05f123a0ad7efcb8efd878e5c3b1"
+dependencies = [
+ "sha2",
+ "walkdir",
+]
+
+[[package]]
 name = "rustc-demangle"
 version = "0.1.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3414,7 +3469,7 @@ version = "0.23.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b92b125634d9b795e7beca796cc790df15a7fb38323bf3196fda83292d06b1f"
 dependencies = [
- "log",
+ "log 0.4.33",
  "once_cell",
  "ring",
  "rustls-pki-types",
@@ -3454,7 +3509,7 @@ dependencies = [
  "core-foundation 0.10.1",
  "core-foundation-sys",
  "jni",
- "log",
+ "log 0.4.33",
  "once_cell",
  "rustls",
  "rustls-native-certs",
@@ -4309,7 +4364,7 @@ dependencies = [
  "esaxx-rs",
  "getrandom 0.3.4",
  "itertools",
- "log",
+ "log 0.4.33",
  "macro_rules_attribute",
  "monostate",
  "onig",
@@ -4494,7 +4549,7 @@ version = "0.1.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "63e71662fa4b2a2c3a26f570f037eb95bb1f85397f3cd8076caed2f026a6d100"
 dependencies = [
- "log",
+ "log 0.4.33",
  "pin-project-lite",
  "tracing-attributes",
  "tracing-core",
@@ -4539,7 +4594,7 @@ version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee855f1f400bd0e5c02d150ae5de3840039a3f54b025156404e34c23c03f47c3"
 dependencies = [
- "log",
+ "log 0.4.33",
  "once_cell",
  "tracing-core",
 ]
@@ -4651,7 +4706,7 @@ checksum = "02d1a66277ed75f640d608235660df48c8e3c19f3b4edb6a263315626cc3c01d"
 dependencies = [
  "base64 0.22.1",
  "flate2",
- "log",
+ "log 0.4.33",
  "once_cell",
  "rustls",
  "rustls-pki-types",
@@ -4669,7 +4724,7 @@ dependencies = [
  "cookie_store",
  "der",
  "flate2",
- "log",
+ "log 0.4.33",
  "native-tls",
  "percent-encoding",
  "rustls",
@@ -4692,7 +4747,7 @@ dependencies = [
  "base64 0.22.1",
  "http",
  "httparse",
- "log",
+ "log 0.4.33",
 ]
 
 [[package]]
@@ -4854,7 +4909,7 @@ dependencies = [
  "anyhow",
  "heck",
  "indexmap",
- "log",
+ "log 0.4.33",
  "petgraph",
  "smallvec",
  "wasm-encoder 0.248.0",
@@ -4948,7 +5003,7 @@ dependencies = [
  "gimli",
  "ittapi",
  "libc",
- "log",
+ "log 0.4.33",
  "mach2",
  "memfd",
  "object",
@@ -4997,7 +5052,7 @@ dependencies = [
  "gimli",
  "hashbrown 0.17.1",
  "indexmap",
- "log",
+ "log 0.4.33",
  "object",
  "postcard",
  "rustc-demangle",
@@ -5022,7 +5077,7 @@ checksum = "8f2799e6c35393c2a38999f13e4c80ab5d5d9756082bb554cbd1f60485a18293"
 dependencies = [
  "base64 0.22.1",
  "directories-next",
- "log",
+ "log 0.4.33",
  "postcard",
  "rustix",
  "serde",
@@ -5081,7 +5136,7 @@ dependencies = [
  "cranelift-native",
  "gimli",
  "itertools",
- "log",
+ "log 0.4.33",
  "object",
  "pulley-interpreter",
  "smallvec",
@@ -5141,7 +5196,7 @@ checksum = "a83f7ebe911a6f1605ff0d3a678472ddb1fcc57c3e2f6bae5dd4d170b625b3ed"
 dependencies = [
  "cfg-if",
  "cranelift-codegen",
- "log",
+ "log 0.4.33",
  "object",
  "wasmtime-environ",
 ]
@@ -5165,7 +5220,7 @@ checksum = "81af36995b4720b32e3d667541b548a27184a859d09a6ee745eaba095f5a6f6e"
 dependencies = [
  "cranelift-codegen",
  "gimli",
- "log",
+ "log 0.4.33",
  "object",
  "target-lexicon",
  "wasmparser 0.248.0",
@@ -5695,7 +5750,7 @@ dependencies = [
  "hashbrown 0.17.1",
  "id-arena",
  "indexmap",
- "log",
+ "log 0.4.33",
  "semver",
  "serde",
  "serde_derive",

@@ -332,17 +332,7 @@ async fn agent_page(State(st): State<AppState>, Path(agent): Path<String>) -> Re
     let Some(a) = idx.agent(&agent) else {
         return not_found();
     };
-    let mut body = format!("<h1>{}</h1><ul>", gui_schema::esc(&a.slug));
-    for deck in a.decks.values() {
-        body.push_str(&format!(
-            "<li><a href=\"/{}/{}/\">{}</a></li>",
-            gui_schema::esc(&a.slug),
-            gui_schema::esc(&deck.slug),
-            gui_schema::esc(&deck.slug)
-        ));
-    }
-    body.push_str("</ul>");
-    Html(format!("<!doctype html><meta charset=utf-8><body>{body}")).into_response()
+    Html(render::agent_page(&a.slug, a.decks.values().map(|d| d.slug.clone()))).into_response()
 }
 
 /// Body of a backflow POST. Unknown fields (e.g. the client `timestamp`) are ignored; the

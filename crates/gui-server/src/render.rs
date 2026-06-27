@@ -1,10 +1,30 @@
-//! Server-side HTML: inject the suite runtime + surface context into an artifact, and
-//! render the inspector / agent pages.
+//! Server-side HTML via Mustache templates embedded with `rust-embed`.
+//!
+//! The page chrome (surface wrapper, head snippet, inspector, agent page) lives in
+//! `templates/*.mustache` — one file each — so markup is edited as markup, not Rust string
+//! literals. Templates render through `mustache` over `Serialize` data; user-controlled
+//! strings use `{{ }}` (HTML-escaped) and only trusted raw HTML/JSON uses `{{{ }}}`.
 
-use gui_schema::esc;
+use rust_embed::RustEmbed;
+use serde::Serialize;
 
 use crate::api::{self, DeckGraph};
 use crate::discovery::Index;
+
+#[derive(RustEmbed)]
+#[folder = "templates/"]
+struct Templates;
+
+/// Compile + render an embedded template. Templates are first-party and validated by tests, so
+/// a missing/broken template is a programmer error (panic), not a runtime input failure.
+fn render(name: &str, data: &impl Serialize) -> String {
+    let file = Templates::get(name).unwrap_or_else(|| panic!("embedded template {name} present"));
+    let src = std::str::from_utf8(&file.data).expect("template is utf-8");
+    let tmpl = mustache::compile_str(src).unwrap_or_else(|e| panic!("compile {name}: {e}"));
+    let mut out = Vec::new();
+    tmpl.render(&mut out, data).unwrap_or_else(|e| panic!("render {name}: {e}"));
+    String::from_utf8(out).expect("rendered template is utf-8")
+}
 
 /// Everything the browser runtime needs to know about the surface being served.
 pub struct PageCtx {
@@ -18,23 +38,32 @@ pub struct PageCtx {
     pub deck_json: String,
 }
 
+#[derive(Serialize)]
+struct HeadData {
+    base: String,
+    surface_id: String,
+    version: String,
+    deck: String,
+}
+
+#[derive(Serialize)]
+struct SurfaceDoc {
+    title: String,
+    head: String,
+    body: String,
+}
+
 /// The `<head>` snippet injected into every served surface.
 fn head_snippet(ctx: &PageCtx) -> String {
-    // Embedding JSON inside a <script> requires neutralizing any "</" sequence.
-    let deck = ctx.deck_json.replace("</", "<\\/");
-    format!(
-        concat!(
-            "<base href=\"{base}\">\n",
-            "<meta name=\"surface\" content=\"{sid}\">\n",
-            "<meta name=\"version\" content=\"{ver}\">\n",
-            "<link rel=\"stylesheet\" href=\"/suite/suite.css\">\n",
-            "<script type=\"application/json\" id=\"gui-deck\">{deck}</script>\n",
-            "<script type=\"module\" src=\"/suite/runtime.js\"></script>"
-        ),
-        base = esc(&ctx.base_url),
-        sid = esc(&ctx.surface_id),
-        ver = esc(&ctx.version),
-        deck = deck,
+    render(
+        "head.html.mustache",
+        &HeadData {
+            base: ctx.base_url.clone(),
+            surface_id: ctx.surface_id.clone(),
+            version: ctx.version.clone(),
+            // Embedding JSON inside a <script> requires neutralizing any "</" sequence.
+            deck: ctx.deck_json.replace("</", "<\\/"),
+        },
     )
 }
 
@@ -46,8 +75,8 @@ fn find_ci(haystack: &str, needle: &str) -> Option<usize> {
 
 /// Render an artifact's `index.html` into a full page with the suite wired in.
 ///
-/// A full document (has `</head>`) gets the snippet injected before `</head>`. A bare
-/// fragment of `<ui-*>` elements is wrapped in a minimal document.
+/// A full document (has `</head>`) gets the snippet injected before `</head>`. A bare fragment
+/// of `<ui-*>` elements is wrapped via the `surface` template.
 pub fn render_surface(html: &str, ctx: &PageCtx) -> String {
     let snippet = head_snippet(ctx);
 
@@ -60,17 +89,13 @@ pub fn render_surface(html: &str, ctx: &PageCtx) -> String {
         return out;
     }
 
-    // Fragment (or full <html> without a head): wrap it.
-    format!(
-        concat!(
-            "<!doctype html>\n<html lang=\"en\">\n<head>\n",
-            "<meta charset=\"utf-8\">\n",
-            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n",
-            "<title>{title}</title>\n{snippet}\n</head>\n<body>\n{body}\n</body>\n</html>\n"
-        ),
-        title = esc(&ctx.title),
-        snippet = snippet,
-        body = html,
+    render(
+        "surface.html.mustache",
+        &SurfaceDoc {
+            title: ctx.title.clone(),
+            head: snippet,
+            body: html.to_string(),
+        },
     )
 }
 
@@ -91,61 +116,109 @@ pub fn page_ctx(
     }
 }
 
+// --- inspector + agent pages ----------------------------------------------
+
+#[derive(Serialize)]
+struct InspectorData {
+    agent_count: usize,
+    surface_count: usize,
+    empty: bool,
+    agents: Vec<AgentView>,
+}
+
+#[derive(Serialize)]
+struct AgentView {
+    slug: String,
+    decks: Vec<DeckView>,
+}
+
+#[derive(Serialize)]
+struct DeckView {
+    slug: String,
+    url: String,
+    surfaces: Vec<SurfaceView>,
+}
+
+#[derive(Serialize)]
+struct SurfaceView {
+    url: String,
+    title: String,
+    version: String,
+    versions: usize,
+    events: usize,
+    versions_url: String,
+}
+
 /// Server-rendered inspector: the discovered tree with live versions, backflow counts, and
 /// deck links. Live-updates via an `EventSource('/events')` that reloads on any change.
 pub fn inspector_page(idx: &Index, root: &std::path::Path) -> String {
-    let mut body = String::new();
-    body.push_str("<h1>Generative UI Suite</h1>");
-    body.push_str(&format!(
-        "<p>{} agent(s), {} surface(s). <a href=\"/api/index.json\">index.json</a> · <a href=\"/api/activity.json\">activity</a></p>",
-        idx.agents.len(),
-        idx.surface_count()
-    ));
-    if idx.agents.is_empty() {
-        body.push_str("<p>No surfaces discovered yet. Publish one into the artifacts directory.</p>");
-    }
-    for agent in idx.agents.values() {
-        body.push_str(&format!("<h2>{}</h2>", esc(&agent.slug)));
-        for deck in agent.decks.values() {
-            body.push_str(&format!(
-                "<h3><a href=\"/{}/{}/\">{}</a> <small>(deck)</small></h3><ul>",
-                esc(&agent.slug),
-                esc(&deck.slug),
-                esc(&deck.slug)
-            ));
-            for surface in deck.ordered_surfaces() {
-                let live = surface.live();
-                let events = crate::server::event_count(root, &surface.path);
-                body.push_str(&format!(
-                    "<li><a href=\"{url}\">{title}</a> — v{ver} ({nv} version(s), {ev} backflow event(s)) \
-                     <a href=\"/api{idpath}/versions.json\">versions</a></li>",
-                    url = esc(&surface.path.url()),
-                    title = esc(&live.manifest.title),
-                    ver = live.version,
-                    nv = surface.versions.len(),
-                    ev = events,
-                    idpath = esc(surface.path.url().trim_end_matches('/')),
-                ));
-            }
-            body.push_str("</ul>");
-        }
-    }
-    // Live reload on any discovery/backflow change.
-    body.push_str(
-        "<script>try{new EventSource('/events').onmessage=()=>location.reload();}catch(e){}</script>",
-    );
-    document("Inspector — Generative UI Suite", &body)
+    let agents = idx
+        .agents
+        .values()
+        .map(|agent| AgentView {
+            slug: agent.slug.clone(),
+            decks: agent
+                .decks
+                .values()
+                .map(|deck| DeckView {
+                    slug: deck.slug.clone(),
+                    url: format!("/{}/{}/", agent.slug, deck.slug),
+                    surfaces: deck
+                        .ordered_surfaces()
+                        .into_iter()
+                        .map(|s| {
+                            let live = s.live();
+                            SurfaceView {
+                                url: s.path.url(),
+                                title: live.manifest.title.clone(),
+                                version: live.version.to_string(),
+                                versions: s.versions.len(),
+                                events: crate::server::event_count(root, &s.path),
+                                versions_url: format!("/api{}/versions.json", s.path.url().trim_end_matches('/')),
+                            }
+                        })
+                        .collect(),
+                })
+                .collect(),
+        })
+        .collect();
+
+    render(
+        "inspector.html.mustache",
+        &InspectorData {
+            agent_count: idx.agents.len(),
+            surface_count: idx.surface_count(),
+            empty: idx.agents.is_empty(),
+            agents,
+        },
+    )
 }
 
-fn document(title: &str, body: &str) -> String {
-    format!(
-        concat!(
-            "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n",
-            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n",
-            "<title>{title}</title>\n</head>\n<body>\n{body}\n</body>\n</html>\n"
-        ),
-        title = esc(title),
-        body = body,
+#[derive(Serialize)]
+struct AgentPage {
+    slug: String,
+    decks: Vec<DeckLink>,
+}
+
+#[derive(Serialize)]
+struct DeckLink {
+    slug: String,
+    url: String,
+}
+
+/// A single agent's page: its decks, each linking to the deck's entry surface.
+pub fn agent_page(slug: &str, deck_slugs: impl Iterator<Item = String>) -> String {
+    render(
+        "agent.html.mustache",
+        &AgentPage {
+            slug: slug.to_string(),
+            decks: deck_slugs
+                .map(|d| DeckLink {
+                    url: format!("/{slug}/{d}/"),
+                    slug: d,
+                })
+                .collect(),
+        },
     )
 }
 
@@ -177,11 +250,9 @@ mod tests {
     fn injects_into_existing_head() {
         let doc = "<!doctype html><html><head><title>x</title></head><body>z</body></html>";
         let out = render_surface(doc, &ctx());
-        // Snippet lands before </head>, body untouched.
         let head_end = out.find("</head>").unwrap();
         assert!(out[..head_end].contains(r#"<meta name="version" content="100">"#));
         assert!(out.contains("<body>z</body>"));
-        // Not double-wrapped.
         assert_eq!(out.matches("<body>").count(), 1);
     }
 
@@ -192,5 +263,25 @@ mod tests {
         let out = render_surface("<ui-text/>", &c);
         assert!(!out.contains("</script></script>"));
         assert!(out.contains(r#"<\/script>"#));
+    }
+
+    #[test]
+    fn inspector_lists_surfaces() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let d = root.join("demo/main/sales/v/1");
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(
+            d.join("frame.json"),
+            r#"{"schema_version":"generative-ui/surface.v1","title":"Sales","alt_text":"a"}"#,
+        )
+        .unwrap();
+        std::fs::write(d.join("index.html"), "<ui-text>hi</ui-text>").unwrap();
+        let idx = Index::build(root);
+        let html = inspector_page(&idx, root);
+        assert!(html.contains("Generative UI Suite"));
+        assert!(html.contains(r#"href="/demo/main/sales/"#));
+        assert!(html.contains("Sales"));
+        assert!(html.contains("gui-topbar"));
     }
 }

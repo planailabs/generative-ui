@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{slug}} — Generative UI Suite</title>
+<link rel="stylesheet" href="/suite/suite.css">
+</head>
+<body>
+<header class="gui-topbar">
+  <a class="gui-brand" href="/">Generative UI Suite</a>
+  <span class="gui-muted">{{slug}}</span>
+</header>
+<div class="gui-container">
+  <div class="gui-kicker">{{slug}}</div>
+  {{#decks}}
+  <div class="gui-card"><a href="{{url}}">{{slug}}</a></div>
+  {{/decks}}
+</div>
+</body>
+</html>

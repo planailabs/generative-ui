@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inspector — Generative UI Suite</title>
+<link rel="stylesheet" href="/suite/suite.css">
+</head>
+<body>
+<header class="gui-topbar">
+  <a class="gui-brand" href="/">Generative UI Suite</a>
+  <span class="gui-muted">{{agent_count}} agent(s) · {{surface_count}} surface(s) ·
+    <a href="/api/index.json">index.json</a> · <a href="/api/activity.json">activity</a></span>
+</header>
+<div class="gui-container">
+  {{#empty}}
+  <p class="gui-muted">No surfaces discovered yet. Publish one into the artifacts directory.</p>
+  {{/empty}}
+  {{#agents}}
+  <div class="gui-kicker">{{slug}}</div>
+  {{#decks}}
+  <h3 class="gui-row"><a href="{{url}}">{{slug}}</a> <span class="gui-pill">deck</span></h3>
+  {{#surfaces}}
+  <div class="gui-card">
+    <div class="gui-row">
+      <a href="{{url}}">{{title}}</a>
+      <span class="gui-pill">v{{version}}</span>
+      <span class="gui-muted">{{versions}} version(s) · {{events}} backflow event(s)</span>
+      <span style="margin-left:auto"><a class="gui-mono" href="{{versions_url}}">versions</a></span>
+    </div>
+  </div>
+  {{/surfaces}}
+  {{/decks}}
+  {{/agents}}
+</div>
+<script>try{new EventSource('/events').onmessage=()=>location.reload();}catch(e){}</script>
+</body>
+</html>

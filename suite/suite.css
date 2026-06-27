@@ -1,122 +1,216 @@
-/* Generative UI Suite — minimal styling for the <ui-*> components. No build step. */
+/* Generative UI Suite styling — driven by the plan-ai design tokens (orange · sparse ·
+ * hairlines · mono-for-facts). Tokens ported verbatim from plan-ai-design/assets/input.css
+ * (the design source of truth); classes re-expressed as plain CSS so the suite keeps its
+ * no-build, native-ESM contract (Tailwind @apply isn't available here). No build step. */
 
 :root {
-  --ui-fg: #1b1f24;
-  --ui-muted: #5b6573;
-  --ui-bg: #ffffff;
-  --ui-surface: #f6f8fa;
-  --ui-border: #d7dee6;
-  --ui-accent: #2f6feb;
-  --ui-accent-fg: #ffffff;
-  --ui-radius: 8px;
-  --ui-gap: 12px;
+  /* Surfaces */
+  --c-bg: 240 237 228;            /* #f0ede4 tan cream canvas */
+  --c-surface: 255 255 255;       /* cards */
+  --c-surface-2: 250 247 240;     /* chrome */
+  --c-surface-3: 230 226 215;
+  --c-surface-strong: 215 209 195;
+  /* Text */
+  --c-fg: 22 26 34;
+  --c-fg-strong: 11 15 21;
+  --c-fg-muted: 104 106 110;
+  --c-fg-faint: 150 150 148;
+  --c-fg-invert: 255 255 255;
+  /* Lines */
+  --c-line: 224 220 209;
+  --c-line-soft: 214 209 196;
+  /* Brand — orange means action */
+  --c-brand: 234 88 12;           /* #ea580c orange-600 */
+  --c-brand-strong: 194 65 12;
+  --c-brand-soft: 246 230 219;
+  /* Status */
+  --c-success: 5 150 105;
+  --c-danger: 220 38 38;
+  --c-info: 37 99 235;
+  /* Type stacks (system fallback — no web-font fetch) */
+  --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Inter Tight", Inter, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius: 10px;
+  --gap: 12px;
 }
+
+/* Dark theme: OS preference, or an explicit `.dark` class on <html>. */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --c-bg: 11 15 21;
+    --c-surface: 28 39 53;
+    --c-surface-2: 22 30 41;
+    --c-surface-3: 45 60 80;
+    --c-surface-strong: 65 85 110;
+    --c-fg: 232 237 245;
+    --c-fg-strong: 255 255 255;
+    --c-fg-muted: 188 194 204;
+    --c-fg-faint: 156 162 172;
+    --c-line: 52 64 80;
+    --c-line-soft: 65 78 96;
+    --c-brand: 249 115 22;
+    --c-brand-strong: 234 88 12;
+    --c-brand-soft: 67 47 37;
+  }
+}
+.dark {
+  --c-bg: 11 15 21;
+  --c-surface: 28 39 53;
+  --c-surface-2: 22 30 41;
+  --c-surface-3: 45 60 80;
+  --c-surface-strong: 65 85 110;
+  --c-fg: 232 237 245;
+  --c-fg-strong: 255 255 255;
+  --c-fg-muted: 188 194 204;
+  --c-fg-faint: 156 162 172;
+  --c-line: 52 64 80;
+  --c-line-soft: 65 78 96;
+  --c-brand: 249 115 22;
+  --c-brand-strong: 234 88 12;
+  --c-brand-soft: 67 47 37;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
 
 body {
   margin: 0;
-  font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-  color: var(--ui-fg);
-  background: var(--ui-bg);
-  padding: 24px;
+  font: 15px/1.55 var(--font-sans);
+  color: rgb(var(--c-fg));
+  background: rgb(var(--c-bg));
+}
+
+/* Surface pages center their content; chrome pages (inspector) lay out full width. */
+.gui-surface {
+  padding: 32px 24px;
   max-width: 880px;
   margin-inline: auto;
 }
 
-ui-text,
-ui-heading,
-ui-card,
-ui-form,
-ui-deck-nav {
-  display: block;
+/* ── Chrome (inspector / agent pages) ─────────────────────────────── */
+.gui-topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 24px;
+  background: rgb(var(--c-surface-2));
+  border-bottom: 1px solid rgb(var(--c-line));
 }
+.gui-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 680;
+  color: rgb(var(--c-fg-strong));
+  text-decoration: none;
+}
+.gui-brand::before {
+  content: "";
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  background: rgb(var(--c-brand));
+}
+.gui-topbar .gui-muted { margin-left: auto; }
+.gui-container {
+  max-width: 980px;
+  margin-inline: auto;
+  padding: 24px;
+}
+.gui-muted { color: rgb(var(--c-fg-muted)); font-size: 0.9rem; }
+.gui-mono { font-family: var(--font-mono); font-size: 0.85em; color: rgb(var(--c-fg-muted)); }
+.gui-kicker {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(var(--c-fg-faint));
+}
+.gui-card {
+  background: rgb(var(--c-surface));
+  border: 1px solid rgb(var(--c-line));
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin: 0 0 10px;
+}
+.gui-card a { color: rgb(var(--c-fg-strong)); text-decoration: none; font-weight: 620; }
+.gui-card a:hover { color: rgb(var(--c-brand)); }
+.gui-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.gui-pill {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--c-line));
+  color: rgb(var(--c-fg-muted));
+}
+a { color: rgb(var(--c-brand)); }
 
-ui-text {
-  margin: 0 0 var(--ui-gap);
-  color: var(--ui-fg);
-}
+/* ── <ui-*> components ─────────────────────────────────────────────── */
+ui-text, ui-heading, ui-card, ui-form, ui-deck-nav { display: block; }
 
-ui-heading {
-  font-weight: 650;
-  margin: 0 0 var(--ui-gap);
-}
-ui-heading[aria-level="1"] { font-size: 1.7rem; }
-ui-heading[aria-level="2"] { font-size: 1.35rem; }
-ui-heading[aria-level="3"] { font-size: 1.1rem; }
+ui-text { margin: 0 0 var(--gap); }
+ui-heading { font-weight: 680; color: rgb(var(--c-fg-strong)); margin: 0 0 var(--gap); line-height: 1.2; }
+ui-heading[aria-level="1"] { font-size: 1.7rem; letter-spacing: -0.01em; }
+ui-heading[aria-level="2"] { font-size: 1.32rem; }
+ui-heading[aria-level="3"] { font-size: 1.08rem; }
 
 ui-card {
-  background: var(--ui-surface);
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius);
+  background: rgb(var(--c-surface));
+  border: 1px solid rgb(var(--c-line));
+  border-radius: var(--radius);
   padding: 16px;
-  margin: 0 0 var(--ui-gap);
+  margin: 0 0 var(--gap);
 }
 
 .ui-btn {
   font: inherit;
+  font-weight: 560;
   cursor: pointer;
-  background: var(--ui-accent);
-  color: var(--ui-accent-fg);
-  border: 0;
-  border-radius: var(--ui-radius);
+  background: rgb(var(--c-brand));
+  color: rgb(var(--c-fg-invert));
+  border: 1px solid transparent;
+  border-radius: 8px;
   padding: 8px 14px;
 }
-.ui-btn:hover { filter: brightness(1.05); }
-.ui-btn:active { filter: brightness(0.95); }
+.ui-btn:hover { background: rgb(var(--c-brand-strong)); }
+.ui-btn:active { transform: translateY(0.5px); }
+.ui-btn:focus-visible { outline: 2px solid rgb(var(--c-brand)); outline-offset: 2px; }
 
-.ui-field {
-  display: block;
-  margin: 0 0 var(--ui-gap);
-}
-.ui-label {
-  display: block;
-  font-size: 0.85rem;
-  color: var(--ui-muted);
-  margin-bottom: 4px;
-}
+.ui-field { display: block; margin: 0 0 var(--gap); }
+.ui-label { display: block; font-size: 0.82rem; color: rgb(var(--c-fg-muted)); margin-bottom: 4px; }
 .ui-control {
   font: inherit;
   width: 100%;
-  box-sizing: border-box;
   padding: 8px 10px;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius);
-  background: var(--ui-bg);
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 8px;
+  background: rgb(var(--c-surface));
+  color: rgb(var(--c-fg));
 }
+.ui-control:focus { outline: none; border-color: rgb(var(--c-brand)); }
 
-.ui-check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 var(--ui-gap);
-}
+.ui-check { display: flex; align-items: center; gap: 8px; margin: 0 0 var(--gap); }
+.ui-check input { accent-color: rgb(var(--c-brand)); }
 
-.ui-link {
-  color: var(--ui-accent);
-  text-decoration: none;
-}
+.ui-link { color: rgb(var(--c-brand)); text-decoration: none; }
 .ui-link:hover { text-decoration: underline; }
 
 .ui-deck-nav {
   display: flex;
   align-items: center;
-  gap: var(--ui-gap);
+  gap: var(--gap);
   flex-wrap: wrap;
-  border-top: 1px solid var(--ui-border);
-  margin-top: 24px;
+  border-top: 1px solid rgb(var(--c-line));
+  margin-top: 28px;
   padding-top: 12px;
   font-size: 0.9rem;
 }
-.ui-deck-list {
-  display: inline-flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.ui-deck-link {
-  color: var(--ui-accent);
-  text-decoration: none;
-}
-.ui-deck-link.current {
-  color: var(--ui-fg);
-  font-weight: 650;
-  text-decoration: underline;
-}
+.ui-deck-list { display: inline-flex; gap: 10px; flex-wrap: wrap; }
+.ui-deck-link { color: rgb(var(--c-brand)); text-decoration: none; }
+.ui-deck-link.current { color: rgb(var(--c-fg-strong)); font-weight: 680; text-decoration: underline; }
+
+/* Values bound to the live KV view (data-kv) — render as facts (mono). */
+[data-kv] { font-family: var(--font-mono); color: rgb(var(--c-fg-strong)); }
