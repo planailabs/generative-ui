@@ -27,6 +27,7 @@ async fn publish_and_define_deck_write_the_directory() {
         alt_text: "Revenue".into(),
         html: "<ui-heading level=\"1\">Sales</ui-heading><ui-button data-action=\"refresh\">Refresh</ui-button>".into(),
         nav: Some(vec![gui_mcp::NavParam { to: "settings".into(), label: Some("Settings".into()) }]),
+        handlers: None,
         metadata_json: None,
     }))
     .await
@@ -77,6 +78,7 @@ async fn wait_for_backflow_returns_a_written_event() {
         alt_text: "alt".into(),
         html: "<ui-text>hi</ui-text>".into(),
         nav: None,
+        handlers: None,
         metadata_json: None,
     }))
     .await
@@ -126,6 +128,45 @@ async fn wait_for_backflow_returns_a_written_event() {
         .await
         .unwrap();
     assert!(result_text(&listed).contains("refresh"));
+}
+
+#[tokio::test]
+async fn publish_surface_with_js_handler_writes_entry_and_manifest() {
+    let (tmp, srv) = server();
+    srv.publish_surface(Parameters(PublishParams {
+        agent: "demo".into(),
+        deck: None,
+        surface: "counter".into(),
+        title: "Counter".into(),
+        alt_text: "a".into(),
+        html: "<ui-button data-action=\"bump\">Bump</ui-button><span data-kv=\"hits\"></span>".into(),
+        nav: None,
+        handlers: Some(vec![gui_mcp::HandlerParam {
+            action: "bump".into(),
+            lang: "js".into(),
+            entry: None,
+            source: Some("function handle(e,h){ h.kv.set('hits',(h.kv.get('hits')||0)+1); return {hits:h.kv.get('hits')}; }".into()),
+            source_base64: None,
+            http_allow: None,
+            fs: None,
+            kv: Some(true),
+            wall_ms: None,
+            mem_mb: None,
+        }]),
+        metadata_json: None,
+    }))
+    .await
+    .expect("publish with handler");
+
+    let ws = Workspace::new(tmp.path());
+    let path = gui_schema::SurfacePath::new("demo", "main", "counter").unwrap();
+    let version = ws.live_version(&path).unwrap();
+    let (manifest, _html) = ws.read_version(&path, version).unwrap();
+    let def = &manifest.handlers["bump"];
+    assert_eq!(def.entry, "main.js");
+    assert!(def.capabilities.kv);
+    // The entry file was written alongside the manifest.
+    assert!(path.version_dir(tmp.path(), version).join("main.js").exists());
 }
 
 /// Serialize a tool result to JSON for substring assertions (robust to the exact Content

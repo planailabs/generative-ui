@@ -60,6 +60,33 @@ or `{ "received": false }` on timeout.
 - A **button** yields `{ action, value }` (its `data-action` + `data-value`).
 - A **form** yields `{ action: "<form action>", value: { field: value, ... } }`.
 
+## Handlers (sandboxed server-side logic)
+
+Instead of waiting for backflow and republishing, you can attach **handlers** to a surface:
+sandboxed code (JS, Lua, or WASM) that runs on the server when a backflow action arrives. A
+handler **never edits the surface** — it folds the surface's **KV view** (a small key/value
+store the UI reads) and defines the HTTP response. Bind a KV value in your HTML with
+`data-kv="key"`; the browser refreshes those nodes after each interaction, with no reload.
+(The server must run with `--enable-handlers`.)
+
+```json
+{
+  "agent": "assistant", "surface": "counter",
+  "title": "Counter", "alt_text": "A click counter",
+  "html": "<ui-button data-action=\"bump\">Bump</ui-button> <span data-kv=\"hits\">0</span>",
+  "handlers": [{
+    "action": "bump", "lang": "js", "kv": true,
+    "source": "function handle(event, host) { host.kv.set('hits', (host.kv.get('hits')||0)+1); return { hits: host.kv.get('hits') }; }"
+  }]
+}
+```
+
+Capabilities are **default-deny**: grant `kv`, `fs`, and `http_allow: ["host"]` only as needed.
+The unified `host` API (identical in js/lua/wasm) is in `component_help`: `host.kv.*`,
+`host.http.fetch`, `host.fs.*` (jailed), `host.log`, `host.response`/`host.responseCode`.
+Use handlers for data/side-effects (counters, fetches, caching); keep surface *layout* changes
+as `publish_surface`. WASM handlers pass the module bytes via `source_base64`.
+
 ## Patterns
 
 - **Prompt the user**: publish a surface with an input/form, `wait_for_backflow`, read `value`.

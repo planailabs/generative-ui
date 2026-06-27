@@ -25,6 +25,8 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use std::collections::BTreeMap;
+
 use anyhow::{bail, Context, Result};
 use gui_schema::{
     atomic_write, is_valid_slug, render_all, AgentInfo, Component, DeckManifest, Event, Manifest,
@@ -33,8 +35,9 @@ use gui_schema::{
 
 // Re-export the schema types agents need, so one `use gui_agent::*` is enough.
 pub use gui_schema::{
-    AgentInfo as AgentInfoSchema, Component as UiComponent, DeckManifest as Deck, NavEdge as Nav,
-    SurfacePath as Surface, Version as SurfaceVersion,
+    AgentInfo as AgentInfoSchema, Capabilities, Component as UiComponent, DeckManifest as Deck,
+    HandlerDef, HandlerLang, Limits, NavEdge as Nav, SurfacePath as Surface,
+    Version as SurfaceVersion,
 };
 
 /// Current time as `(unix_millis, rfc3339)`.
@@ -57,6 +60,8 @@ pub struct SurfaceBuilder {
     raw_html: Option<String>,
     nav: Vec<NavEdge>,
     actions: Vec<String>,
+    /// action → (definition, entry-file bytes to write into the version dir on publish).
+    handlers: BTreeMap<String, (HandlerDef, Vec<u8>)>,
     metadata: serde_json::Map<String, serde_json::Value>,
 }
 
@@ -128,6 +133,29 @@ impl SurfaceBuilder {
         self
     }
 
+    /// Attach a sandboxed handler for `action`. `entry` (e.g. `main.js`/`main.lua`/`main.wasm`)
+    /// is written into the version dir on [`Workspace::publish`]; the def is recorded in the
+    /// manifest. Also registers the backflow action.
+    pub fn handler(
+        mut self,
+        action: impl Into<String>,
+        lang: HandlerLang,
+        entry: impl Into<String>,
+        source: impl Into<Vec<u8>>,
+        capabilities: Capabilities,
+        limits: Limits,
+    ) -> Self {
+        let action = action.into();
+        let def = HandlerDef {
+            lang,
+            entry: entry.into(),
+            capabilities,
+            limits,
+        };
+        self.handlers.insert(action.clone(), (def, source.into()));
+        self.action(action)
+    }
+
     /// Set a free-form metadata key.
     pub fn meta(mut self, key: impl Into<String>, value: serde_json::Value) -> Self {
         self.metadata.insert(key.into(), value);
@@ -150,7 +178,11 @@ impl SurfaceBuilder {
             backflow: (!self.actions.is_empty()).then(|| gui_schema::Backflow {
                 actions: self.actions.clone(),
             }),
-            handlers: Default::default(),
+            handlers: self
+                .handlers
+                .iter()
+                .map(|(action, (def, _))| (action.clone(), def.clone()))
+                .collect(),
             nav: self.nav.clone(),
             metadata: self.metadata.clone(),
         }
@@ -197,6 +229,11 @@ impl Workspace {
         atomic_write(&dir.join("frame.json"), &manifest_json).context("write frame.json")?;
         atomic_write(&dir.join("index.html"), builder.body_html().as_bytes())
             .context("write index.html")?;
+        // Write each handler's entry file alongside frame.json/index.html in this version.
+        for (action, (def, source)) in &builder.handlers {
+            atomic_write(&dir.join(&def.entry), source)
+                .with_context(|| format!("write handler entry for action {action:?}"))?;
+        }
         tracing::info!(surface = %path.id(), %version, "published surface");
         Ok(version)
     }
@@ -389,6 +426,39 @@ mod tests {
 
         // History retained: v1 still readable.
         assert_eq!(ws.read_version(&p, v1).unwrap().0.title, "Sales v1");
+    }
+
+    #[test]
+    fn publish_writes_handler_entry_and_manifest() {
+        let (_t, ws) = ws();
+        let p = SurfacePath::new("demo", "main", "counter").unwrap();
+        let v = ws
+            .publish(
+                &p,
+                &SurfaceBuilder::new("Counter", "a")
+                    .button("Bump", "bump", json!(null))
+                    .handler(
+                        "bump",
+                        HandlerLang::Js,
+                        "main.js",
+                        "function handle(e,h){ return {ok:true}; }",
+                        Capabilities { kv: true, ..Default::default() },
+                        Limits::default(),
+                    ),
+            )
+            .unwrap();
+
+        // Entry file landed in the version dir.
+        let src = std::fs::read_to_string(p.version_dir(ws.root(), v).join("main.js")).unwrap();
+        assert!(src.contains("function handle"));
+
+        // Manifest records the handler def.
+        let (manifest, _html) = ws.read_version(&p, v).unwrap();
+        let def = &manifest.handlers["bump"];
+        assert_eq!(def.lang, HandlerLang::Js);
+        assert_eq!(def.entry, "main.js");
+        assert!(def.capabilities.kv && !def.capabilities.fs);
+        assert!(manifest.backflow.unwrap().actions.contains(&"bump".to_string()));
     }
 
     #[test]

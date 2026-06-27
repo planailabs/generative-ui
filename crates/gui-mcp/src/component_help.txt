@@ -23,3 +23,32 @@ components directly; the plain-HTML translation is a convenience.
 Interaction flows back via wait_for_backflow / list_backflow:
   - a button yields { action, value }
   - a form yields  { action: "<form action>", value: { field: value, ... } }
+
+Handlers (server-side, sandboxed) — publish_surface's `handlers` field
+-----------------------------------------------------------------------
+Attach code that runs WHEN a backflow action arrives (server must run with --enable-handlers).
+A handler NEVER edits the surface. It folds the surface's KV view (which the UI reads) and
+returns the HTTP response body. Bind a KV value in your HTML with: <span data-kv="key"></span>
+(dotted keys allowed: data-kv="user.name"). The UI refreshes bound nodes after each backflow
+and on server changes — no page reload.
+
+Each handler entry: { action, lang: "js"|"lua"|"wasm", source (text) or source_base64 (wasm),
+  http_allow: ["host"], fs: bool, kv: bool, wall_ms, mem_mb }. Capabilities are default-deny.
+
+Entry point per language (same unified `host` API in all three):
+  js   main.js : function handle(event, host) { ...; return body; }
+  lua  main.lua: return function(event, host) ...; return body end
+  wasm main.wasm: a core module exporting handle(event)->body (see examples/handler-wasm)
+
+Unified host API:
+  host.kv.get(key) -> value|null      host.kv.set(key, value)      host.kv.all() -> object
+  host.http.fetch({url, method?, headers?, body?}) -> {status, headers, body}   (allowlisted)
+  host.fs.read(path) / host.fs.write(path, data) / host.fs.list(prefix)  (jailed to state/)
+  host.log(level, message)
+  host.response(body) or host.response(code, body)   host.responseCode.NOT_FOUND (etc.)
+
+Example (js): increment a counter and show it via <span data-kv="hits">:
+  function handle(event, host) {
+    host.kv.set("hits", (host.kv.get("hits") || 0) + 1);
+    return { hits: host.kv.get("hits") };
+  }

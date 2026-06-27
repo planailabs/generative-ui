@@ -7,7 +7,8 @@
 
 use std::time::Duration;
 
-use gui_agent::{SurfaceBuilder, Workspace};
+use base64::Engine as _;
+use gui_agent::{Capabilities, HandlerLang, Limits, SurfaceBuilder, Workspace};
 use gui_schema::{DeckManifest, SurfacePath, DEFAULT_DECK};
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -55,8 +56,53 @@ pub struct PublishParams {
     pub html: String,
     /// Navigation edges to sibling surfaces.
     pub nav: Option<Vec<NavParam>>,
+    /// Sandboxed handlers that run on matching backflow actions (server must run with
+    /// `--enable-handlers`). Handlers never edit the surface; they fold the surface's KV view
+    /// (read by the UI) and define the HTTP response. See `component_help` for the host API.
+    pub handlers: Option<Vec<HandlerParam>>,
     /// Free-form metadata as a JSON **string** (a JSON object).
     pub metadata_json: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct HandlerParam {
+    /// Backflow action this handler runs on.
+    pub action: String,
+    /// Engine: `js`, `lua`, or `wasm`.
+    pub lang: String,
+    /// Entry filename in the version dir (default `main.js`/`main.lua`/`main.wasm`).
+    pub entry: Option<String>,
+    /// Handler source (text — for `js`/`lua`).
+    pub source: Option<String>,
+    /// Handler bytes as base64 (for `wasm`, or any binary entry).
+    pub source_base64: Option<String>,
+    /// Allowed outbound HTTP hosts (exact match). Empty/absent ⇒ no network.
+    pub http_allow: Option<Vec<String>>,
+    /// Grant jailed filesystem access under the surface's `state/` dir.
+    pub fs: Option<bool>,
+    /// Grant access to the surface's KV view.
+    pub kv: Option<bool>,
+    /// Wall-clock budget in ms (default 2000).
+    pub wall_ms: Option<u64>,
+    /// Memory cap in MB (default 32).
+    pub mem_mb: Option<u64>,
+}
+
+fn handler_lang(s: &str) -> Result<HandlerLang, ErrorData> {
+    match s {
+        "js" => Ok(HandlerLang::Js),
+        "lua" => Ok(HandlerLang::Lua),
+        "wasm" => Ok(HandlerLang::Wasm),
+        other => Err(invalid(format!("unknown handler lang {other:?} (use js|lua|wasm)"))),
+    }
+}
+
+fn default_entry(lang: HandlerLang) -> &'static str {
+    match lang {
+        HandlerLang::Js => "main.js",
+        HandlerLang::Lua => "main.lua",
+        HandlerLang::Wasm => "main.wasm",
+    }
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -126,7 +172,7 @@ impl GuiServer {
     }
 
     #[tool(
-        description = "Publish a new version of a UI surface (latest-wins). Provide `html`: the surface body written with the <ui-*> components (call `component_help` first). You may also write plain HTML (button, h1-h3, p, form, select, a[data-to]); it is live-rewritten into the equivalent components in the browser."
+        description = "Publish a new version of a UI surface (latest-wins). Provide `html`: the surface body written with the <ui-*> components (call `component_help` first). You may also write plain HTML (button, h1-h3, p, form, select, a[data-to]); it is live-rewritten into the equivalent components in the browser. Optionally attach `handlers` (js/lua/wasm) that run on backflow actions to fold the surface KV view and define a response — bind values in the HTML with data-kv=\"key\"."
     )]
     pub async fn publish_surface(
         &self,
@@ -137,6 +183,30 @@ impl GuiServer {
         let mut b = SurfaceBuilder::new(p.title, p.alt_text).html(p.html);
         for edge in p.nav.unwrap_or_default() {
             b = b.nav(edge.to, edge.label.as_deref());
+        }
+        for h in p.handlers.unwrap_or_default() {
+            let lang = handler_lang(&h.lang)?;
+            let entry = h.entry.unwrap_or_else(|| default_entry(lang).to_string());
+            let source: Vec<u8> = match (h.source, h.source_base64) {
+                (Some(s), _) => s.into_bytes(),
+                (None, Some(b64)) => base64::engine::general_purpose::STANDARD
+                    .decode(b64.trim())
+                    .map_err(|e| invalid(format!("handler source_base64: {e}")))?,
+                (None, None) => return Err(invalid("handler needs `source` or `source_base64`")),
+            };
+            let capabilities = Capabilities {
+                http: h.http_allow.unwrap_or_default(),
+                fs: h.fs.unwrap_or(false),
+                kv: h.kv.unwrap_or(false),
+            };
+            let mut limits = Limits::default();
+            if let Some(w) = h.wall_ms {
+                limits.wall_ms = w;
+            }
+            if let Some(m) = h.mem_mb {
+                limits.mem_mb = m;
+            }
+            b = b.handler(h.action, lang, entry, source, capabilities, limits);
         }
         if let Some(metadata) = p.metadata_json {
             let obj: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&metadata)
