@@ -1492,6 +1492,7 @@ dependencies = [
  "arc-swap",
  "axum",
  "clap",
+ "gui-agent",
  "gui-runtime",
  "gui-schema",
  "mime_guess",

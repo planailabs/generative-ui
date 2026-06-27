@@ -74,9 +74,13 @@ limits}`) — code (`main.js`/`main.lua`/`main.wasm`) the server runs when that 
 action arrives (opt-in: `--enable-handlers`). Handlers **never edit the surface**; they fold
 the surface's KV view (`state/kv.json`, served at `/api/{a}/{d}/{s}/kv.json`, live-bound in
 the UI via `data-kv="key"`) and define the HTTP response. All three engines share one
-capability-gated host API (`host.kv/http/fs/log/response/responseCode`) enforced with
-default-deny capabilities + limits in `gui-runtime`. The WASM guest lives in
-`examples/handler-wasm` (committed `.wasm`; rebuild per its README).
+capability-gated host API enforced with default-deny capabilities + limits in `gui-runtime`,
+reached through one `__host_call` dispatch. The API: `host.kv`/`host.kvPrivate` (public served
+at `kv.json`; private agent-only), `host.emit`/`host.emitPrivate` (record events the agent
+picks up — public ones also on the events API; the same stream a handler-less *direct submit*
+produces), `host.http.fetch` (allowlisted), `host.fs.*` (jailed), `host.log`,
+`host.response`/`host.responseCode`. The WASM guest lives in `examples/handler-wasm` (committed
+`.wasm`; rebuild per its README).
 
 ## Hard rules
 

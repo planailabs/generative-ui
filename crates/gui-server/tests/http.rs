@@ -327,6 +327,67 @@ async fn example_deck_all_three_engines_fold_kv_identically() {
 }
 
 #[tokio::test]
+async fn handler_emit_and_scope_split_across_the_api() {
+    // A handler emits a public + a private event and writes public + private KV. The public
+    // API exposes only public; private stays on disk for the agent.
+    let tmp = tempfile::tempdir().unwrap();
+    let d = tmp.path().join("demo/main/s/v/1");
+    write(
+        &d.join("frame.json"),
+        &manifest("S", r#","handlers":{"go":{"lang":"js","entry":"main.js","capabilities":{"kv":true}}}"#),
+    );
+    write(&d.join("index.html"), "<ui-text>s</ui-text>");
+    write(
+        &d.join("main.js"),
+        "function handle(e,h){ h.emit('pub-evt',{a:1}); h.emitPrivate('priv-evt',{b:2}); \
+         h.kv.set('shown',1); h.kvPrivate.set('hidden',9); return {ok:true}; }",
+    );
+
+    let base = start_with(AppState::new(tmp.path().to_path_buf()).with_handlers(true)).await;
+    let http = reqwest::Client::new();
+    let res = http
+        .post(format!("{base}/backflow/demo/main/s"))
+        .json(&serde_json::json!({ "action": "go" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+
+    // events API: public events only (the 'go' backflow + the emitted 'pub-evt'); never 'priv-evt'.
+    let ev: serde_json::Value = http
+        .get(format!("{base}/api/demo/main/s/events.json"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let actions: Vec<&str> = ev["events"].as_array().unwrap().iter().filter_map(|e| e["action"].as_str()).collect();
+    assert!(actions.contains(&"pub-evt"), "public emitted event visible: {actions:?}");
+    assert!(actions.contains(&"go"), "direct submission visible");
+    assert!(!actions.contains(&"priv-evt"), "private event hidden from the API");
+
+    // kv API: public only.
+    let kv: serde_json::Value = http
+        .get(format!("{base}/api/demo/main/s/kv.json"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(kv["shown"], 1);
+    assert!(kv.get("hidden").is_none(), "private kv hidden from the API");
+
+    // The agent reads private state directly via the workspace.
+    let ws = gui_agent::Workspace::new(tmp.path());
+    let path = gui_schema::SurfacePath::new("demo", "main", "s").unwrap();
+    assert_eq!(ws.read_kv(&path, gui_agent::Scope::Private)["hidden"], 9);
+    assert!(ws.read_backflow(&path, None).unwrap().iter().any(|e| e.event.action == "priv-evt"),
+        "agent sees the private event on disk");
+}
+
+#[tokio::test]
 async fn handlers_disabled_by_default_only_logs_event() {
     // Without --enable-handlers the same surface just logs the event and returns 202.
     let tmp = tempfile::tempdir().unwrap();

@@ -36,7 +36,7 @@ use gui_schema::{
 // Re-export the schema types agents need, so one `use gui_agent::*` is enough.
 pub use gui_schema::{
     AgentInfo as AgentInfoSchema, Capabilities, Component as UiComponent, DeckManifest as Deck,
-    HandlerDef, HandlerLang, Limits, NavEdge as Nav, SurfacePath as Surface,
+    HandlerDef, HandlerLang, Limits, NavEdge as Nav, Scope, SurfacePath as Surface,
     Version as SurfaceVersion,
 };
 
@@ -277,6 +277,23 @@ impl Workspace {
             .context("parse frame.json")?;
         let html = std::fs::read_to_string(dir.join("index.html"))?;
         Ok((manifest, html))
+    }
+
+    /// Read a surface's materialized KV view for `scope`. `Public` is also served over the
+    /// HTTP API and read by the UI; `Private` is agent-only. Empty when absent.
+    pub fn read_kv(&self, path: &SurfacePath, scope: Scope) -> serde_json::Map<String, serde_json::Value> {
+        let file = match scope {
+            Scope::Public => path.kv_path(&self.root),
+            Scope::Private => path.kv_private_path(&self.root),
+        };
+        std::fs::read(file)
+            .ok()
+            .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+            .and_then(|v| match v {
+                serde_json::Value::Object(m) => Some(m),
+                _ => None,
+            })
+            .unwrap_or_default()
     }
 
     /// All backflow events for a surface with `millis > since` (or all when `since` is

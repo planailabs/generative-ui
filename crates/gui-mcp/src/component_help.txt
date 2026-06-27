@@ -42,10 +42,21 @@ Entry point per language (same unified `host` API in all three):
 
 Unified host API:
   host.kv.get(key) -> value|null      host.kv.set(key, value)      host.kv.all() -> object
+  host.kvPrivate.get/set/all          -- agent-only KV; never served to the browser
   host.http.fetch({url, method?, headers?, body?}) -> {status, headers, body}   (allowlisted)
   host.fs.read(path) / host.fs.write(path, data) / host.fs.list(prefix)  (jailed to state/)
   host.log(level, message)
+  host.emit(name, data)               -- record an event the agent picks up (public)
+  host.emitPrivate(name, data)        -- agent-only event (not on the public events API)
   host.response(body) or host.response(code, body)   host.responseCode.NOT_FOUND (etc.)
+
+Public vs private: `host.kv`/`host.emit` are visible to the browser (kv.json / events API) and
+bound in the UI via data-kv; `host.kvPrivate`/`host.emitPrivate` are for the producing agent
+only. The agent reads everything (public + private) via list_backflow / the workspace.
+
+Direct submit (no handler): a surface with no handler for an action still records the event —
+a <ui-button data-action="name"> or <ui-form data-action="name"> with its fields IS the event
+(name + data). Use this when you don't want a handler; read it via wait_for_backflow.
 
 Example (js): increment a counter and show it via <span data-kv="hits">:
   function handle(event, host) {

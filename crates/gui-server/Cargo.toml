@@ -34,3 +34,4 @@ tracing-subscriber.workspace = true
 [dev-dependencies]
 tempfile.workspace = true
 reqwest.workspace = true
+gui-agent.workspace = true

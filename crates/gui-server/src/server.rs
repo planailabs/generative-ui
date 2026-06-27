@@ -426,11 +426,6 @@ fn load_kv_file(path: &FsPath) -> serde_json::Map<String, serde_json::Value> {
         .unwrap_or_default()
 }
 
-/// The private KV file (never served over the public API).
-fn kv_private_path(root: &FsPath, path: &SurfacePath) -> PathBuf {
-    path.state_dir(root).join("kv.private.json")
-}
-
 fn persist_kv(target: &FsPath, view: &gui_runtime::KvView, surface: &str) {
     if !view.changed {
         return;
@@ -455,7 +450,7 @@ async fn run_surface_handler(
     let root = st.root.clone();
     let path = path.clone();
     let kv_public_path = path.kv_path(&root);
-    let kv_private_path = kv_private_path(&root, &path);
+    let kv_private_path = path.kv_private_path(&root);
     let state_dir = path.state_dir(&root);
     let kv_public = load_kv_file(&kv_public_path);
     let kv_private = load_kv_file(&kv_private_path);

@@ -151,6 +151,20 @@ fn assert_fold_accumulates(fx: &Fixture) {
     }
 }
 
+/// A handler can emit an event (for the agent) and write private KV; the public view is
+/// untouched and the private view is flagged for persistence.
+fn assert_emit_and_private(fx: &Fixture) {
+    let caps = Capabilities { kv: true, ..Default::default() };
+    let ev = event("emitdemo", json!(null));
+    let out = run(fx, caps, Limits::default(), &ev, Map::new()).unwrap();
+    assert_eq!(out.emitted.len(), 1, "one event emitted");
+    assert_eq!(out.emitted[0].name, "noted");
+    assert_eq!(out.emitted[0].scope, gui_schema::Scope::Public);
+    assert_eq!(out.private.map["secret"], json!(1), "private kv set");
+    assert!(out.private.changed, "private flagged dirty");
+    assert!(!out.public.changed, "public untouched");
+}
+
 /// An infinite loop is killed at the wall-clock deadline.
 fn assert_wall_clock_abort(fx: &Fixture) {
     let limits = Limits { wall_ms: 200, ..Default::default() };
@@ -193,8 +207,27 @@ const LUA_COUNTER: Fixture = Fixture {
 };
 
 #[cfg(feature = "js")]
+const JS_EMIT: Fixture = Fixture {
+    lang: HandlerLang::Js,
+    entry: "main.js",
+    source: b"function handle(e,h){ h.emit('noted',{n:1}); h.kvPrivate.set('secret',1); return {ok:true}; }",
+};
+
+#[cfg(feature = "lua")]
+const LUA_EMIT: Fixture = Fixture {
+    lang: HandlerLang::Lua,
+    entry: "main.lua",
+    source: b"return function(e,h) h.emit('noted',{n=1}); h.kvPrivate.set('secret',1); return {ok=true} end",
+};
+
+#[cfg(feature = "js")]
 mod js {
     use super::*;
+
+    #[test]
+    fn emit_and_private() {
+        assert_emit_and_private(&JS_EMIT);
+    }
 
     #[test]
     fn full_host_api() {
@@ -244,6 +277,11 @@ mod lua {
     }
 
     #[test]
+    fn emit_and_private() {
+        assert_emit_and_private(&LUA_EMIT);
+    }
+
+    #[test]
     fn fold_accumulates() {
         assert_fold_accumulates(&LUA_COUNTER);
     }
@@ -290,6 +328,11 @@ mod wasm {
     #[test]
     fn full_host_api() {
         assert_full_api(&WASM_HANDLER);
+    }
+
+    #[test]
+    fn emit_and_private() {
+        assert_emit_and_private(&WASM_HANDLER);
     }
 
     #[test]

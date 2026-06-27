@@ -53,6 +53,11 @@ fn dispatch(event: &Value) -> Value {
             kv_set("hits", json!(n));
             json!({ "hits": n })
         }
+        "emitdemo" => {
+            call("emit", &json!({ "scope": "public", "name": "noted", "data": { "n": 1 } }));
+            call("kv.set", &json!({ "scope": "private", "key": "secret", "value": 1 }));
+            json!({ "ok": true })
+        }
         "respond" => {
             let code = call("status_codes", &json!({}))
                 .get("NOT_FOUND")

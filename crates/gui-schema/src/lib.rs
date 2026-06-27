@@ -154,9 +154,14 @@ impl SurfacePath {
         self.dir(root).join("state")
     }
 
-    /// `.../state/kv.json` — the materialized KV view folded from the backflow log.
+    /// `.../state/kv.json` — the public KV view (served over the API, read by the UI).
     pub fn kv_path(&self, root: &Path) -> PathBuf {
         self.state_dir(root).join("kv.json")
+    }
+
+    /// `.../state/kv.private.json` — the private KV view (agent-only; never served).
+    pub fn kv_private_path(&self, root: &Path) -> PathBuf {
+        self.state_dir(root).join("kv.private.json")
     }
 }
 
