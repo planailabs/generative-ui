@@ -12,6 +12,7 @@ gui-schema = { path = "crates/gui-schema" }
 gui-agent = { path = "crates/gui-agent" }
 gui-server = { path = "crates/gui-server" }
 gui-mcp = { path = "crates/gui-mcp" }
+gui-runtime = { path = "crates/gui-runtime" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
