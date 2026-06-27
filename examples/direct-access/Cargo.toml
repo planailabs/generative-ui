@@ -22,12 +22,13 @@ anyhow.workspace = true
 tokio.workspace = true
 clap.workspace = true
 async-trait = "0.1"
-swiftide = { version = "0.32.1", features = ["swiftide-agents"] }
-# Real OpenAI(-compatible) backend is opt-in: `--features openai`. swiftide 0.32's openai
-# integration pins against a specific async-openai API; the version may need adjusting for
-# your toolchain. The default build (and tests) use the deterministic MockLlm, which needs
-# no network and exercises the full create→wait→respond loop.
-async-openai = { version = "0.41", optional = true }
+# Latest swiftide from git (its OpenAI integration targets the current async-openai 0.41 API).
+swiftide = { git = "https://github.com/bosun-ai/swiftide", features = ["swiftide-agents"] }
+# Real OpenAI(-compatible) backend is opt-in: `--features openai`. We only use it to build a
+# client with a custom base URL; `chat-completion` exposes Client + config.
+# Pin to the version git swiftide's lockfile uses; >=0.33 otherwise resolves to 0.41 which
+# renamed the error/schema API swiftide builds against.
+async-openai = { version = "=0.33.0", optional = true, features = ["chat-completion"] }
 
 [features]
 openai = ["swiftide/openai", "dep:async-openai"]

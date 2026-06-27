@@ -82,10 +82,12 @@ OPENAI_API_KEY=… cargo run -p direct-access --features openai -- \
     --model gpt-4o-mini --base-url https://your-endpoint/v1
 ```
 
-The default build uses a built-in mock LLM (no network) and is what the tests exercise.
-The real backend is gated behind `--features openai`; swiftide 0.32's OpenAI integration
-pins a specific `async-openai` API, so that version may need adjusting for your toolchain.
-The session loop is generic over any swiftide `ChatCompletion`, so the backend is pluggable.
+The default build uses a built-in mock LLM (no network) and is what the tests exercise. The
+real backend is gated behind `--features openai` (uses swiftide from git, pinned to
+`async-openai 0.33`; needs a recent cargo for git swiftide's 2024 edition). Pass a `--model`
+your endpoint actually hosts (e.g. query `GET {base-url}/models`). The session loop is generic
+over any swiftide `ChatCompletion`, so the backend is pluggable. Verified end to end against a
+custom base URL — the agent calls the endpoint and republishes the answer onto the surface.
 
 ## Crates
 

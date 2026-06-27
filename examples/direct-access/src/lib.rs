@@ -33,7 +33,7 @@ pub struct MockLlm;
 impl ChatCompletion for MockLlm {
     async fn complete(
         &self,
-        request: &ChatCompletionRequest,
+        request: &ChatCompletionRequest<'_>,
     ) -> std::result::Result<ChatCompletionResponse, LanguageModelError> {
         let prompt = request
             .messages()
