@@ -25,8 +25,8 @@ clap.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 async-trait = "0.1"
-# Latest swiftide from git, with the MCP toolbox so the agent drives our gui-mcp server.
-swiftide = { git = "https://github.com/bosun-ai/swiftide", features = ["swiftide-agents", "mcp"] }
+# swiftide from git (pinned rev so the flake's vendoring hash stays valid).
+swiftide = { git = "https://github.com/bosun-ai/swiftide", rev = "dd558c6a4cfe7880892a314dc503c761ade70bba", features = ["swiftide-agents", "mcp"] }
 # rmcp client to connect to the gui-mcp subprocess (must match swiftide's rmcp 0.17).
 rmcp = { version = "0.17", default-features = false, features = ["client", "transport-child-process"] }
 # For building tool specs from MCP schemas (match swiftide's schemars 1.0).

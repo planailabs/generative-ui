@@ -3286,7 +3286,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 [[package]]
 name = "swiftide"
 version = "0.32.1"
-source = "git+https://github.com/bosun-ai/swiftide#dd558c6a4cfe7880892a314dc503c761ade70bba"
+source = "git+https://github.com/bosun-ai/swiftide?rev=dd558c6a4cfe7880892a314dc503c761ade70bba#dd558c6a4cfe7880892a314dc503c761ade70bba"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3306,7 +3306,7 @@ dependencies = [
 [[package]]
 name = "swiftide-agents"
 version = "0.32.1"
-source = "git+https://github.com/bosun-ai/swiftide#dd558c6a4cfe7880892a314dc503c761ade70bba"
+source = "git+https://github.com/bosun-ai/swiftide?rev=dd558c6a4cfe7880892a314dc503c761ade70bba#dd558c6a4cfe7880892a314dc503c761ade70bba"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3335,7 +3335,7 @@ dependencies = [
 [[package]]
 name = "swiftide-core"
 version = "0.32.1"
-source = "git+https://github.com/bosun-ai/swiftide#dd558c6a4cfe7880892a314dc503c761ade70bba"
+source = "git+https://github.com/bosun-ai/swiftide?rev=dd558c6a4cfe7880892a314dc503c761ade70bba#dd558c6a4cfe7880892a314dc503c761ade70bba"
 dependencies = [
  "anyhow",
  "async-openai",
@@ -3363,7 +3363,7 @@ dependencies = [
 [[package]]
 name = "swiftide-indexing"
 version = "0.32.1"
-source = "git+https://github.com/bosun-ai/swiftide#dd558c6a4cfe7880892a314dc503c761ade70bba"
+source = "git+https://github.com/bosun-ai/swiftide?rev=dd558c6a4cfe7880892a314dc503c761ade70bba#dd558c6a4cfe7880892a314dc503c761ade70bba"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3389,7 +3389,7 @@ dependencies = [
 [[package]]
 name = "swiftide-integrations"
 version = "0.32.1"
-source = "git+https://github.com/bosun-ai/swiftide#dd558c6a4cfe7880892a314dc503c761ade70bba"
+source = "git+https://github.com/bosun-ai/swiftide?rev=dd558c6a4cfe7880892a314dc503c761ade70bba#dd558c6a4cfe7880892a314dc503c761ade70bba"
 dependencies = [
  "anyhow",
  "async-openai",
@@ -3423,7 +3423,7 @@ dependencies = [
 [[package]]
 name = "swiftide-macros"
 version = "0.32.1"
-source = "git+https://github.com/bosun-ai/swiftide#dd558c6a4cfe7880892a314dc503c761ade70bba"
+source = "git+https://github.com/bosun-ai/swiftide?rev=dd558c6a4cfe7880892a314dc503c761ade70bba#dd558c6a4cfe7880892a314dc503c761ade70bba"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3440,7 +3440,7 @@ dependencies = [
 [[package]]
 name = "swiftide-query"
 version = "0.32.1"
-source = "git+https://github.com/bosun-ai/swiftide#dd558c6a4cfe7880892a314dc503c761ade70bba"
+source = "git+https://github.com/bosun-ai/swiftide?rev=dd558c6a4cfe7880892a314dc503c761ade70bba#dd558c6a4cfe7880892a314dc503c761ade70bba"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3459,7 +3459,7 @@ dependencies = [
 [[package]]
 name = "swiftide-tasks"
 version = "0.32.1"
-source = "git+https://github.com/bosun-ai/swiftide#dd558c6a4cfe7880892a314dc503c761ade70bba"
+source = "git+https://github.com/bosun-ai/swiftide?rev=dd558c6a4cfe7880892a314dc503c761ade70bba#dd558c6a4cfe7880892a314dc503c761ade70bba"
 dependencies = [
  "async-trait",
  "dyn-clone",

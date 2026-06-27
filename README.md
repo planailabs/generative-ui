@@ -66,28 +66,33 @@ The MCP server (`cargo run -p gui-mcp -- --artifacts ./artifacts`) exposes the s
 authoring/awaiting flow to any MCP-speaking agent (`publish_surface`, `define_deck`,
 `wait_for_backflow`, …).
 
-## Direct access (server + agent in one binary)
+## Direct access — an agent that authors the whole app via the MCP
 
-The `direct-access` example runs the HTTP server and a [swiftide](https://swiftide.rs)
-LLM agent **in one process** (each is a separate library, just invoked together). The agent
-conducts a whole conversation through interactive UI — publish a prompt surface → wait for
-the user's submission → ask the LLM → republish with the answer (the view re-renders live).
+The `direct-access` example runs the HTTP server, the `gui-mcp` MCP server, and a
+[swiftide](https://swiftide.rs) LLM agent **in one process** (separate libraries, wired
+in-process over an in-memory pipe — no subprocesses). The agent connects to the MCP server,
+loads the [`authoring-ui`](.agents/skills/authoring-ui/SKILL.md) skill as its system prompt,
+and **builds the app itself** by calling the MCP tools (`publish_surface`, `define_deck`, …).
 
 ```sh
 cargo run -p direct-access -- --artifacts ./run --mock        # deterministic, offline
-# open the printed URL (http://127.0.0.1:8080/assistant/chat/) and chat
+# open http://127.0.0.1:8080/  — the surfaces the agent publishes appear live
 
-# Real / OpenAI-compatible backend (opt-in feature; custom base URL supported):
+# Real / OpenAI-compatible backend (opt-in; custom base URL supported):
 OPENAI_API_KEY=… cargo run -p direct-access --features openai -- \
-    --model gpt-4o-mini --base-url https://your-endpoint/v1
+    --base-url https://your-endpoint/v1 --model gpt-5.4-mini \
+    --goal "Build a signup screen, then a thank-you screen"
 ```
 
-The default build uses a built-in mock LLM (no network) and is what the tests exercise. The
-real backend is gated behind `--features openai` (uses swiftide from git, pinned to
-`async-openai 0.33`; needs a recent cargo for git swiftide's 2024 edition). Pass a `--model`
-your endpoint actually hosts (e.g. query `GET {base-url}/models`). The session loop is generic
-over any swiftide `ChatCompletion`, so the backend is pluggable. Verified end to end against a
-custom base URL — the agent calls the endpoint and republishes the answer onto the surface.
+Notes:
+- The default build uses a built-in mock LLM (no network) that drives one `publish_surface`
+  call — what the test exercises. The real backend is gated behind `--features openai` (uses
+  swiftide from git + `async-openai 0.33`; needs a recent cargo for git swiftide's 2024 edition).
+- Pass a `--model` your endpoint hosts (query `GET {base-url}/models`). The agent is generic
+  over any swiftide `ChatCompletion`, so the backend is pluggable.
+- Verbose logging is on by default (stderr); tune with `RUST_LOG`.
+- Verified live against a custom base URL: the agent published a real `<ui-*>` component tree
+  through the MCP.
 
 ## Crates
 
