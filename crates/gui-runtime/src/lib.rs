@@ -11,6 +11,8 @@ mod host;
 
 #[cfg(feature = "js")]
 mod js;
+#[cfg(feature = "lua")]
+mod lua;
 #[cfg(feature = "wasm")]
 mod wasm;
 
@@ -36,6 +38,8 @@ pub fn engine_for(lang: HandlerLang) -> Result<Box<dyn Engine>, HandlerError> {
     match lang {
         #[cfg(feature = "js")]
         HandlerLang::Js => Ok(Box::new(js::JsEngine::new())),
+        #[cfg(feature = "lua")]
+        HandlerLang::Lua => Ok(Box::new(lua::LuaEngine::new())),
         #[cfg(feature = "wasm")]
         HandlerLang::Wasm => Ok(Box::new(wasm::WasmEngine::new())),
         other => Err(HandlerError::EngineUnavailable(other)),

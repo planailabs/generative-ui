@@ -169,20 +169,12 @@ fn bind_host(ctx: &Ctx, host: &SharedHost) -> Result<(), HandlerError> {
     g.set(
         "__host_http",
         Function::new(ctx.clone(), move |ctx: Ctx, req_json: String| {
-            let req = parse_http_request(&req_json).map_err(|e| throw!(ctx, e))?;
+            let v = serde_json::from_str(&req_json)
+                .map_err(|e| crate::host::HostError::Other(format!("bad http request: {e}")))
+                .map_err(|e| throw!(ctx, e))?;
+            let req = HttpRequest::from_json(&v).map_err(|e| throw!(ctx, e))?;
             let resp = h.borrow_mut().http_fetch(req).map_err(|e| throw!(ctx, e))?;
-            Ok::<String, rquickjs::Error>(
-                serde_json::json!({
-                    "status": resp.status,
-                    "headers": resp
-                        .headers
-                        .into_iter()
-                        .map(|(k, v)| (k, serde_json::Value::String(v)))
-                        .collect::<serde_json::Map<_, _>>(),
-                    "body": resp.body,
-                })
-                .to_string(),
-            )
+            Ok::<String, rquickjs::Error>(resp.to_json().to_string())
         })
         .map_err(js_err)?,
     )
@@ -249,31 +241,4 @@ fn bind_host(ctx: &Ctx, host: &SharedHost) -> Result<(), HandlerError> {
     .map_err(js_err)?;
 
     Ok(())
-}
-
-fn parse_http_request(json: &str) -> Result<HttpRequest, crate::host::HostError> {
-    use crate::host::HostError;
-    let v: serde_json::Value =
-        serde_json::from_str(json).map_err(|e| HostError::Other(format!("bad http request: {e}")))?;
-    let url = v
-        .get("url")
-        .and_then(|u| u.as_str())
-        .ok_or_else(|| HostError::Other("http request missing url".into()))?
-        .to_string();
-    let method = v.get("method").and_then(|m| m.as_str()).unwrap_or("GET").to_string();
-    let headers = v
-        .get("headers")
-        .and_then(|h| h.as_object())
-        .map(|o| {
-            o.iter()
-                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                .collect()
-        })
-        .unwrap_or_default();
-    let body = match v.get("body") {
-        Some(serde_json::Value::String(s)) => Some(s.clone()),
-        Some(serde_json::Value::Null) | None => None,
-        Some(other) => Some(other.to_string()),
-    };
-    Ok(HttpRequest { url, method, headers, body })
 }

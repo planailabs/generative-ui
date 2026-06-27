@@ -41,6 +41,45 @@ pub struct HttpRequest {
     pub body: Option<String>,
 }
 
+impl HttpRequest {
+    /// Build a request from a guest-supplied `{url, method?, headers?, body?}` value.
+    pub fn from_json(v: &Value) -> Result<Self, HostError> {
+        let url = v
+            .get("url")
+            .and_then(|u| u.as_str())
+            .ok_or_else(|| HostError::Other("http request missing url".into()))?
+            .to_string();
+        let method = v.get("method").and_then(|m| m.as_str()).unwrap_or("GET").to_string();
+        let headers = v
+            .get("headers")
+            .and_then(|h| h.as_object())
+            .map(|o| {
+                o.iter()
+                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let body = match v.get("body") {
+            Some(Value::String(s)) => Some(s.clone()),
+            Some(Value::Null) | None => None,
+            Some(other) => Some(other.to_string()),
+        };
+        Ok(Self { url, method, headers, body })
+    }
+}
+
+impl HttpResponse {
+    /// As a JSON object `{status, headers, body}` for handing back to the guest.
+    pub fn to_json(&self) -> Value {
+        let headers: Map<String, Value> = self
+            .headers
+            .iter()
+            .map(|(k, v)| (k.clone(), Value::String(v.clone())))
+            .collect();
+        serde_json::json!({ "status": self.status, "headers": headers, "body": self.body })
+    }
+}
+
 /// The response handed back to the guest.
 #[derive(Debug, Clone)]
 pub struct HttpResponse {

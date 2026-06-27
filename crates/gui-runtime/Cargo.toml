@@ -10,9 +10,9 @@ license.workspace = true
 # feature gains its `dep:<crate>` in the stage that implements it.
 # Engines added per stage; each gains its line in `default` as it lands so the workspace
 # builds the full set. (lua, wasm to follow.)
-default = ["js"]
+default = ["js", "lua"]
 js = ["dep:rquickjs"]
-lua = []
+lua = ["dep:mlua"]
 wasm = []
 
 [dependencies]
@@ -25,6 +25,7 @@ ureq = "2"
 url = "2"
 http = "1"
 rquickjs = { version = "0.9", optional = true }
+mlua = { version = "0.10", features = ["luau", "vendored", "serialize"], optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

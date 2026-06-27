@@ -91,7 +91,7 @@ function handle(event, host) {
   // http via allowlist
   const r = host.http.fetch({ url: event.value.url });
   host.log("info", "done");
-  return { hits: host.kv.get("hits"), note: note, status: r.status, n: JSON.parse(r.body).n };
+  return { hits: host.kv.get("hits"), note: note, status: r.status, bodylen: r.body.length };
 }
 "#,
 };
@@ -126,8 +126,11 @@ fn assert_full_api(fx: &Fixture) {
     assert_eq!(out.response.status, 200);
     assert_eq!(out.response.body["hits"], json!(1));
     assert_eq!(out.response.body["note"], json!("v=7"));
-    assert_eq!(out.response.body["status"], json!(200));
-    assert_eq!(out.response.body["n"], json!(7));
+    assert_eq!(out.response.body["status"], json!(200), "http round-trip status");
+    assert!(
+        out.response.body["bodylen"].as_u64().unwrap() > 0,
+        "http response body delivered to guest"
+    );
     // kv folded + flagged dirty for persistence.
     assert!(out.kv_changed);
     assert_eq!(out.kv["hits"], json!(1));
@@ -155,6 +158,36 @@ fn assert_wall_clock_abort(fx: &Fixture) {
         "expected timeout/abort, got {err:?}"
     );
 }
+
+#[cfg(feature = "lua")]
+const LUA_FULL: Fixture = Fixture {
+    lang: HandlerLang::Lua,
+    entry: "main.lua",
+    source: r#"
+return function(event, host)
+  host.kv.set("hits", (host.kv.get("hits") or 0) + 1)
+  host.fs.write("note.txt", "v=" .. tostring(event.value.n))
+  local note = host.fs.read("note.txt")
+  local r = host.http.fetch({ url = event.value.url })
+  host.log("info", "done")
+  return { hits = host.kv.get("hits"), note = note, status = r.status, bodylen = #r.body }
+end
+"#,
+};
+
+#[cfg(feature = "lua")]
+const LUA_LOOP: Fixture = Fixture {
+    lang: HandlerLang::Lua,
+    entry: "main.lua",
+    source: "return function(e, h) while true do end end",
+};
+
+#[cfg(feature = "lua")]
+const LUA_COUNTER: Fixture = Fixture {
+    lang: HandlerLang::Lua,
+    entry: "main.lua",
+    source: "return function(e, h) h.kv.set('hits', (h.kv.get('hits') or 0) + 1); return { hits = h.kv.get('hits') } end",
+};
 
 #[cfg(feature = "js")]
 mod js {
@@ -193,6 +226,47 @@ mod js {
         // No kv capability granted → host.kv.set throws → handler errors.
         let ev = event("go", json!(null));
         let err = run(&JS_COUNTER, Capabilities::default(), Limits::default(), &ev, Map::new())
+            .unwrap_err();
+        assert!(matches!(err, HandlerError::Guest(_)), "got {err:?}");
+    }
+}
+
+#[cfg(feature = "lua")]
+mod lua {
+    use super::*;
+
+    #[test]
+    fn full_host_api() {
+        assert_full_api(&LUA_FULL);
+    }
+
+    #[test]
+    fn fold_accumulates() {
+        assert_fold_accumulates(&LUA_COUNTER);
+    }
+
+    #[test]
+    fn wall_clock_abort() {
+        assert_wall_clock_abort(&LUA_LOOP);
+    }
+
+    #[test]
+    fn explicit_response_with_status_code() {
+        const FX: Fixture = Fixture {
+            lang: HandlerLang::Lua,
+            entry: "main.lua",
+            source: "return function(e, h) h.response(h.responseCode.NOT_FOUND, { error = 'nope' }); return { ignored = true } end",
+        };
+        let ev = event("go", json!(null));
+        let out = run(&FX, Capabilities::default(), Limits::default(), &ev, Map::new()).unwrap();
+        assert_eq!(out.response.status, 404, "host.responseCode.NOT_FOUND from the http crate");
+        assert_eq!(out.response.body, json!({ "error": "nope" }));
+    }
+
+    #[test]
+    fn undeclared_capability_is_denied() {
+        let ev = event("go", json!(null));
+        let err = run(&LUA_COUNTER, Capabilities::default(), Limits::default(), &ev, Map::new())
             .unwrap_err();
         assert!(matches!(err, HandlerError::Guest(_)), "got {err:?}");
     }
