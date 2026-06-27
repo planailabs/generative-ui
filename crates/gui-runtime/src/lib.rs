@@ -9,6 +9,8 @@
 mod engine;
 mod host;
 
+#[cfg(feature = "js")]
+mod js;
 #[cfg(feature = "wasm")]
 mod wasm;
 
@@ -22,6 +24,7 @@ use serde_json::{Map, Value};
 
 /// The result of running one handler: the response to return, plus the (possibly mutated)
 /// KV view to persist.
+#[derive(Debug, Clone)]
 pub struct HandlerOutcome {
     pub response: HandlerResponse,
     pub kv: Map<String, Value>,
@@ -31,6 +34,8 @@ pub struct HandlerOutcome {
 /// Pick the engine for a language, or report it unavailable if its feature is off.
 pub fn engine_for(lang: HandlerLang) -> Result<Box<dyn Engine>, HandlerError> {
     match lang {
+        #[cfg(feature = "js")]
+        HandlerLang::Js => Ok(Box::new(js::JsEngine::new())),
         #[cfg(feature = "wasm")]
         HandlerLang::Wasm => Ok(Box::new(wasm::WasmEngine::new())),
         other => Err(HandlerError::EngineUnavailable(other)),
@@ -63,8 +68,16 @@ pub fn run_handler(
         limits: def.limits,
     };
 
-    let response = engine.run(&inv, host.clone())?;
+    let returned = engine.run(&inv, host.clone())?;
     let h = host.borrow();
+    // An explicit `host.response(code, body)` overrides the handler's return value.
+    let response = match h.response() {
+        Some((status, body)) => HandlerResponse {
+            status: *status,
+            body: body.clone(),
+        },
+        None => returned,
+    };
     Ok(HandlerOutcome {
         response,
         kv: h.kv().clone(),

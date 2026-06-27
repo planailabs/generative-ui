@@ -41,7 +41,10 @@ fn fixture(root: &Path) {
 }
 
 async fn start(root: &Path) -> String {
-    let state = AppState::new(root.to_path_buf());
+    start_with(AppState::new(root.to_path_buf())).await
+}
+
+async fn start_with(state: AppState) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let app = gui_server::router(state);
@@ -201,6 +204,86 @@ async fn backflow_writes_event_into_directory() {
         .unwrap();
     assert_eq!(bad.status(), 404);
     assert!(!tmp.path().join("demo/main/nope").exists());
+}
+
+#[tokio::test]
+async fn js_handler_dispatch_folds_kv_and_defines_response() {
+    // A surface whose `bump` action runs a JS handler: it folds a counter into KV and returns
+    // it. The event is still logged; the KV view is readable via the kv.json endpoint.
+    let tmp = tempfile::tempdir().unwrap();
+    let d = tmp.path().join("demo/main/counter/v/1");
+    write(
+        &d.join("frame.json"),
+        &manifest(
+            "Counter",
+            r#","handlers":{"bump":{"lang":"js","entry":"main.js","capabilities":{"kv":true}}}"#,
+        ),
+    );
+    write(&d.join("index.html"), "<ui-text>counter</ui-text>");
+    write(
+        &d.join("main.js"),
+        "function handle(e,h){ h.kv.set('hits',(h.kv.get('hits')||0)+1); return {hits:h.kv.get('hits')}; }",
+    );
+
+    let state = AppState::new(tmp.path().to_path_buf()).with_handlers(true);
+    let base = start_with(state).await;
+    let http = reqwest::Client::new();
+
+    // Two bumps: the handler's response carries the running count.
+    for expected in 1..=2 {
+        let res = http
+            .post(format!("{base}/backflow/demo/main/counter"))
+            .json(&serde_json::json!({"action":"bump"}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 200, "handler defines the response");
+        let body: serde_json::Value = res.json().await.unwrap();
+        assert_eq!(body["hits"], expected);
+    }
+
+    // The event log still recorded both interactions (source of truth).
+    let events_dir = tmp.path().join("demo/main/counter/events");
+    assert_eq!(fs::read_dir(&events_dir).unwrap().count(), 2);
+
+    // KV persisted and readable via the endpoint the UI uses.
+    let kv: serde_json::Value = http
+        .get(format!("{base}/api/demo/main/counter/kv.json"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(kv["hits"], 2);
+    assert!(tmp.path().join("demo/main/counter/state/kv.json").exists());
+}
+
+#[tokio::test]
+async fn handlers_disabled_by_default_only_logs_event() {
+    // Without --enable-handlers the same surface just logs the event and returns 202.
+    let tmp = tempfile::tempdir().unwrap();
+    let d = tmp.path().join("demo/main/counter/v/1");
+    write(
+        &d.join("frame.json"),
+        &manifest(
+            "Counter",
+            r#","handlers":{"bump":{"lang":"js","entry":"main.js","capabilities":{"kv":true}}}"#,
+        ),
+    );
+    write(&d.join("index.html"), "<ui-text>counter</ui-text>");
+    write(&d.join("main.js"), "function handle(e,h){ return {ran:true}; }");
+
+    let base = start(tmp.path()).await; // handlers disabled
+    let http = reqwest::Client::new();
+    let res = http
+        .post(format!("{base}/backflow/demo/main/counter"))
+        .json(&serde_json::json!({"action":"bump"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 202, "no handler run; plain ack");
+    assert!(!tmp.path().join("demo/main/counter/state/kv.json").exists());
 }
 
 #[tokio::test]

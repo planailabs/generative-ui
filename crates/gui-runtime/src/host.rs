@@ -59,8 +59,35 @@ pub struct Host {
     kv: Map<String, Value>,
     kv_changed: bool,
     http_calls: u32,
+    /// Explicit response set via `host.response(code, body)`; overrides the handler's return.
+    response: Option<(u16, Value)>,
     /// Collected `log` lines (level, message) — also emitted via `tracing`.
     logs: Vec<(String, String)>,
+}
+
+/// `NAME -> code` for every status the `http` crate knows, named in SCREAMING_SNAKE to match
+/// the crate's own constants (e.g. 404 → `NOT_FOUND`, 200 → `OK`, 418 → `IM_A_TEAPOT`).
+/// Drives `host.responseCode.*`; sourced from the `http` crate so the numbers are
+/// authoritative. Used by each engine binding (behind its feature); unused in the bare
+/// host-only build.
+#[allow(dead_code)]
+pub fn status_codes() -> Map<String, Value> {
+    (100u16..=599)
+        .filter_map(|n| {
+            let s = http::StatusCode::from_u16(n).ok()?;
+            let reason = s.canonical_reason()?;
+            Some((screaming_snake(reason), Value::from(n)))
+        })
+        .collect()
+}
+
+fn screaming_snake(reason: &str) -> String {
+    reason
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(|w| w.to_ascii_uppercase())
+        .collect::<Vec<_>>()
+        .join("_")
 }
 
 /// A host shared into an engine's guest callbacks.
@@ -75,6 +102,7 @@ impl Host {
             kv,
             kv_changed: false,
             http_calls: 0,
+            response: None,
             logs: Vec::new(),
         }
     }
@@ -95,6 +123,17 @@ impl Host {
     }
     pub fn logs(&self) -> &[(String, String)] {
         &self.logs
+    }
+
+    /// Set the response explicitly (via `host.response(code, body)`); overrides the handler's
+    /// return value. Last call wins.
+    pub fn set_response(&mut self, status: u16, body: Value) {
+        self.response = Some((status, body));
+    }
+
+    /// The explicit response, if the handler called `host.response`.
+    pub fn response(&self) -> Option<&(u16, Value)> {
+        self.response.as_ref()
     }
 
     // --- kv ---------------------------------------------------------------

@@ -14,13 +14,20 @@ struct Cli {
     /// Address to bind.
     #[arg(long, default_value = "127.0.0.1:8080")]
     addr: String,
+    /// Execute surface handlers (main.js/lua/wasm) on matching backflow actions. Off by
+    /// default — handlers run sandboxed code, so opt in explicitly.
+    #[arg(long)]
+    enable_handlers: bool,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     init_tracing();
     let cli = Cli::parse();
-    let state = AppState::new(cli.artifacts.clone());
+    let state = AppState::new(cli.artifacts.clone()).with_handlers(cli.enable_handlers);
+    if cli.enable_handlers {
+        tracing::warn!("handler execution enabled — surfaces' main.js/lua/wasm will run on backflow");
+    }
 
     let idx = state.index.load_full();
     for w in &idx.warnings {

@@ -34,6 +34,8 @@ pub struct AppState {
     pub root: PathBuf,
     /// Fan-out for SSE: a small JSON line per discovery/backflow change.
     pub events_tx: broadcast::Sender<String>,
+    /// Whether matching backflow actions run their surface handler (opt-in; runs code).
+    pub enable_handlers: bool,
 }
 
 impl AppState {
@@ -45,7 +47,14 @@ impl AppState {
             index: Arc::new(ArcSwap::from_pointee(index)),
             root,
             events_tx,
+            enable_handlers: false,
         }
+    }
+
+    /// Enable (or disable) handler execution on backflow.
+    pub fn with_handlers(mut self, enable: bool) -> Self {
+        self.enable_handlers = enable;
+        self
     }
 
     /// Re-scan and atomically swap the index (used by the watcher).
@@ -100,6 +109,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/{agent}/{deck}/deck.json", get(api_deck))
         .route("/api/{agent}/{deck}/{surface}/versions.json", get(api_versions))
         .route("/api/{agent}/{deck}/{surface}/events.json", get(api_events))
+        .route("/api/{agent}/{deck}/{surface}/kv.json", get(api_kv))
         .route(
             "/{agent}/{deck}/{surface}/v/{version}/assets/{*path}",
             get(asset),
@@ -230,6 +240,22 @@ async fn api_events(
     }
     let events = read_surface_events(&st.root, &path, 100);
     Json(serde_json::json!({ "surface": path.id(), "events": events })).into_response()
+}
+
+/// The surface's materialized KV view (folded from backflow by its handlers). The UI reads
+/// this and live-binds values; `{}` when no handler has produced state yet.
+async fn api_kv(
+    State(st): State<AppState>,
+    Path((agent, deck, surface)): Path<(String, String, String)>,
+) -> Response {
+    let idx = st.index.load_full();
+    let Ok(path) = SurfacePath::new(agent, deck, surface) else {
+        return not_found();
+    };
+    if idx.surface(&path).is_none() {
+        return not_found();
+    }
+    Json(serde_json::Value::Object(load_kv(&st.root, &path))).into_response()
 }
 
 async fn api_index(State(st): State<AppState>) -> Json<api::IndexResponse> {
@@ -363,17 +389,86 @@ async fn backflow(
     };
     let target = path.events_dir(&st.root).join(event.file_name(ms));
     tracing::info!(surface = %path.id(), action = %event.action, "backflow received");
+    // The event log is the source of truth — write it first (audit), regardless of handlers.
     let bytes = serde_json::to_vec_pretty(&event).expect("event serializes");
-    match atomic_write(&target, &bytes) {
-        Ok(()) => (
-            StatusCode::ACCEPTED,
-            Json(serde_json::json!({ "ok": true, "event": target.file_name().and_then(|s| s.to_str()) })),
-        )
-            .into_response(),
-        Err(e) => {
-            (StatusCode::INTERNAL_SERVER_ERROR, Html(format!("write failed: {e}"))).into_response()
+    if let Err(e) = atomic_write(&target, &bytes) {
+        return (StatusCode::INTERNAL_SERVER_ERROR, Html(format!("write failed: {e}"))).into_response();
+    }
+
+    // If a handler is registered for this action (and execution is enabled), run it: it folds
+    // KV from the event and defines the HTTP response. Handlers never touch the surface HTML.
+    if st.enable_handlers {
+        if let Some(def) = found.live().manifest.handlers.get(&event.action).cloned() {
+            return run_surface_handler(&st, &path, found.live().dir.clone(), def, event).await;
         }
     }
+
+    (
+        StatusCode::ACCEPTED,
+        Json(serde_json::json!({ "ok": true, "event": target.file_name().and_then(|s| s.to_str()) })),
+    )
+        .into_response()
+}
+
+/// Read the surface's materialized KV view (`state/kv.json`), or an empty object if absent.
+fn load_kv(root: &FsPath, path: &SurfacePath) -> serde_json::Map<String, serde_json::Value> {
+    std::fs::read(path.kv_path(root))
+        .ok()
+        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+        .and_then(|v| match v {
+            serde_json::Value::Object(m) => Some(m),
+            _ => None,
+        })
+        .unwrap_or_default()
+}
+
+/// Run a surface's handler on a blocking worker (the engines + host I/O are synchronous),
+/// persist any KV change (which fires the watcher → SSE), and return the handler's response.
+async fn run_surface_handler(
+    st: &AppState,
+    path: &SurfacePath,
+    version_dir: PathBuf,
+    def: gui_schema::HandlerDef,
+    event: Event,
+) -> Response {
+    let root = st.root.clone();
+    let path = path.clone();
+    let kv_path = path.kv_path(&root);
+    let state_dir = path.state_dir(&root);
+    let kv = load_kv(&root, &path);
+
+    let joined = tokio::task::spawn_blocking(move || {
+        gui_runtime::run_handler(&def, &version_dir, &state_dir, &event, kv)
+    })
+    .await;
+
+    let outcome = match joined {
+        Ok(Ok(o)) => o,
+        Ok(Err(e)) => {
+            tracing::error!(surface = %path.id(), error = %e, "handler failed");
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+            )
+                .into_response();
+        }
+        Err(join) => {
+            tracing::error!(surface = %path.id(), error = %join, "handler worker panicked");
+            return (StatusCode::INTERNAL_SERVER_ERROR, Html("handler crashed".to_string()))
+                .into_response();
+        }
+    };
+
+    if outcome.kv_changed {
+        let bytes = serde_json::to_vec_pretty(&serde_json::Value::Object(outcome.kv))
+            .expect("kv serializes");
+        if let Err(e) = atomic_write(&kv_path, &bytes) {
+            tracing::error!(surface = %path.id(), error = %e, "kv persist failed");
+        }
+    }
+
+    let status = StatusCode::from_u16(outcome.response.status).unwrap_or(StatusCode::OK);
+    (status, Json(outcome.response.body)).into_response()
 }
 
 async fn asset(

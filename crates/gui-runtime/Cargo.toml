@@ -8,8 +8,10 @@ license.workspace = true
 # Engines are wired behind features in their own stages. Default builds the host + dispatch
 # only; `engine_for` reports an engine unavailable until its feature (and dep) is on. Each
 # feature gains its `dep:<crate>` in the stage that implements it.
-default = []
-js = []
+# Engines added per stage; each gains its line in `default` as it lands so the workspace
+# builds the full set. (lua, wasm to follow.)
+default = ["js"]
+js = ["dep:rquickjs"]
 lua = []
 wasm = []
 
@@ -21,6 +23,8 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 ureq = "2"
 url = "2"
+http = "1"
+rquickjs = { version = "0.9", optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
