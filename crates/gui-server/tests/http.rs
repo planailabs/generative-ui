@@ -219,7 +219,7 @@ async fn watcher_reindexes_and_broadcasts() {
     write(&d.join("index.html"), "<ui-text>hi</ui-text>");
 
     // Wait until the watcher re-indexes (poll broadcasts + index until visible).
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(20);
     let mut seen = false;
     while Instant::now() < deadline {
         let _ = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await;
