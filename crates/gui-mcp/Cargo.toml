@@ -1,0 +1,24 @@
+[package]
+name = "gui-mcp"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "stdio MCP server exposing the Generative UI agent API as tools (publish surfaces, define decks, wait for backflow)."
+
+[[bin]]
+name = "gui-mcp"
+path = "src/main.rs"
+
+[dependencies]
+gui-schema.workspace = true
+gui-agent.workspace = true
+gui-server.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+clap.workspace = true
+rmcp = { version = "1.8.0", features = ["server", "macros", "transport-io"] }
+
+[dev-dependencies]
+tempfile.workspace = true
