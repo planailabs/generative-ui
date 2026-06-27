@@ -1,0 +1,122 @@
+/* Generative UI Suite — minimal styling for the <ui-*> components. No build step. */
+
+:root {
+  --ui-fg: #1b1f24;
+  --ui-muted: #5b6573;
+  --ui-bg: #ffffff;
+  --ui-surface: #f6f8fa;
+  --ui-border: #d7dee6;
+  --ui-accent: #2f6feb;
+  --ui-accent-fg: #ffffff;
+  --ui-radius: 8px;
+  --ui-gap: 12px;
+}
+
+body {
+  margin: 0;
+  font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  color: var(--ui-fg);
+  background: var(--ui-bg);
+  padding: 24px;
+  max-width: 880px;
+  margin-inline: auto;
+}
+
+ui-text,
+ui-heading,
+ui-card,
+ui-form,
+ui-deck-nav {
+  display: block;
+}
+
+ui-text {
+  margin: 0 0 var(--ui-gap);
+  color: var(--ui-fg);
+}
+
+ui-heading {
+  font-weight: 650;
+  margin: 0 0 var(--ui-gap);
+}
+ui-heading[aria-level="1"] { font-size: 1.7rem; }
+ui-heading[aria-level="2"] { font-size: 1.35rem; }
+ui-heading[aria-level="3"] { font-size: 1.1rem; }
+
+ui-card {
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  padding: 16px;
+  margin: 0 0 var(--ui-gap);
+}
+
+.ui-btn {
+  font: inherit;
+  cursor: pointer;
+  background: var(--ui-accent);
+  color: var(--ui-accent-fg);
+  border: 0;
+  border-radius: var(--ui-radius);
+  padding: 8px 14px;
+}
+.ui-btn:hover { filter: brightness(1.05); }
+.ui-btn:active { filter: brightness(0.95); }
+
+.ui-field {
+  display: block;
+  margin: 0 0 var(--ui-gap);
+}
+.ui-label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--ui-muted);
+  margin-bottom: 4px;
+}
+.ui-control {
+  font: inherit;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  background: var(--ui-bg);
+}
+
+.ui-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 var(--ui-gap);
+}
+
+.ui-link {
+  color: var(--ui-accent);
+  text-decoration: none;
+}
+.ui-link:hover { text-decoration: underline; }
+
+.ui-deck-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-gap);
+  flex-wrap: wrap;
+  border-top: 1px solid var(--ui-border);
+  margin-top: 24px;
+  padding-top: 12px;
+  font-size: 0.9rem;
+}
+.ui-deck-list {
+  display: inline-flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.ui-deck-link {
+  color: var(--ui-accent);
+  text-decoration: none;
+}
+.ui-deck-link.current {
+  color: var(--ui-fg);
+  font-weight: 650;
+  text-decoration: underline;
+}

@@ -164,3 +164,39 @@ async fn routes_end_to_end() {
     let missing = http.get(format!("{base}/demo/main/nope/")).send().await.unwrap();
     assert_eq!(missing.status(), 404);
 }
+
+#[tokio::test]
+async fn serves_suite_as_esm() {
+    let tmp = tempfile::tempdir().unwrap();
+    let base = start(tmp.path()).await;
+    let http = reqwest::Client::new();
+
+    let rt = http.get(format!("{base}/suite/runtime.js")).send().await.unwrap();
+    assert_eq!(rt.status(), 200);
+    assert!(rt
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .starts_with("text/javascript"));
+    let body = rt.text().await.unwrap();
+    assert!(body.contains("customElements.define"));
+    assert!(body.contains(r#"from "./lib.js""#), "runtime imports lib via ESM");
+
+    let css = http.get(format!("{base}/suite/suite.css")).send().await.unwrap();
+    assert!(css
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .starts_with("text/css"));
+
+    let lib = http.get(format!("{base}/suite/lib.js")).send().await.unwrap();
+    assert_eq!(lib.status(), 200);
+    assert!(lib.text().await.unwrap().contains("export function backflowPayload"));
+
+    let nope = http.get(format!("{base}/suite/nope.js")).send().await.unwrap();
+    assert_eq!(nope.status(), 404);
+}

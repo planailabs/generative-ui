@@ -45,10 +45,16 @@ impl AppState {
     }
 }
 
+// The component suite, embedded at compile time (native ESM + CSS, no build step).
+const SUITE_RUNTIME: &str = include_str!("../../../suite/runtime.js");
+const SUITE_LIB: &str = include_str!("../../../suite/lib.js");
+const SUITE_CSS: &str = include_str!("../../../suite/suite.css");
+
 /// Construct the router. Exposed so tests can serve it on an ephemeral port.
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/", get(inspector))
+        .route("/suite/{file}", get(suite_file))
         .route("/api/index.json", get(api_index))
         .route("/api/activity.json", get(api_activity))
         .route("/api/{agent}/{deck}/deck.json", get(api_deck))
@@ -75,6 +81,17 @@ pub async fn serve(addr: &str, state: AppState) -> anyhow::Result<()> {
 
 fn not_found() -> Response {
     (StatusCode::NOT_FOUND, Html("<h1>404 Not Found</h1>".to_string())).into_response()
+}
+
+/// Serve an embedded suite file (`runtime.js`, `lib.js`, `suite.css`).
+async fn suite_file(Path(file): Path<String>) -> Response {
+    let (body, mime) = match file.as_str() {
+        "runtime.js" => (SUITE_RUNTIME, "text/javascript; charset=utf-8"),
+        "lib.js" => (SUITE_LIB, "text/javascript; charset=utf-8"),
+        "suite.css" => (SUITE_CSS, "text/css; charset=utf-8"),
+        _ => return not_found(),
+    };
+    ([(header::CONTENT_TYPE, mime)], body).into_response()
 }
 
 /// Render a surface's live or specific version. `index.html` is read synchronously —
