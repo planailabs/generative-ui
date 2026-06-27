@@ -283,8 +283,9 @@ impl Workspace {
 
     /// Block until a backflow event newer than `since` arrives (or `timeout` elapses).
     ///
-    /// `since = None` waits for events strictly after *now*. A filesystem watcher makes this
-    /// snappy; a 250 ms poll guarantees correctness even if a watcher event is missed.
+    /// `since = None` waits for events strictly after *now*. It is event-driven on a
+    /// filesystem watcher (near-zero idle CPU); a slow fallback re-scan bounds latency if a
+    /// watcher event is ever missed.
     pub fn wait_for_backflow(
         &self,
         path: &SurfacePath,
@@ -317,14 +318,25 @@ impl Workspace {
         // Hold the watcher (if any) for the duration; ignore setup failure (poll still works).
         let _watcher = watcher.ok();
 
+        // Event-driven: block on the watcher channel and only re-scan when it signals. A long
+        // fallback (not a tight poll) bounds latency if a filesystem event is ever missed, so
+        // idle CPU is ~zero instead of scanning 4×/second.
+        const FALLBACK: Duration = Duration::from_secs(10);
         let deadline = Instant::now() + timeout;
         loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
                 return Ok(None);
             }
-            // Wake on a watcher event or every 250 ms, whichever is sooner.
-            let _ = rx.recv_timeout(remaining.min(Duration::from_millis(250)));
+            match rx.recv_timeout(remaining.min(FALLBACK)) {
+                // A watcher event arrived: drain any others so a burst is one scan, then scan.
+                Ok(_) => while rx.try_recv().is_ok() {},
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {} // fallback re-scan
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    // Watcher gone; fall back to a slow poll until the deadline.
+                    std::thread::sleep(remaining.min(FALLBACK));
+                }
+            }
             if let Some(ev) = self.read_backflow(path, Some(cursor))?.into_iter().next() {
                 return Ok(Some(ev));
             }
