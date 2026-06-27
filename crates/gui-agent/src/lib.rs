@@ -198,19 +198,62 @@ pub struct BackflowEvent {
     pub event: Event,
 }
 
+/// Default number of surface versions kept after a publish (older ones are GC'd).
+pub const DEFAULT_KEEP_VERSIONS: usize = 3;
+
 /// A handle to an artifacts directory.
 #[derive(Clone, Debug)]
 pub struct Workspace {
     root: PathBuf,
+    /// Newest N versions to retain per surface on publish; `0` disables GC.
+    keep_versions: usize,
 }
 
 impl Workspace {
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+        Self {
+            root: root.into(),
+            keep_versions: DEFAULT_KEEP_VERSIONS,
+        }
+    }
+
+    /// Set how many newest versions to retain per surface on publish (`0` = keep all).
+    pub fn with_keep_versions(mut self, keep: usize) -> Self {
+        self.keep_versions = keep;
+        self
     }
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// Delete all but the newest `keep_versions` versions of a surface (the live version is
+    /// always newest, so it is never removed). No-op when `keep_versions == 0`.
+    fn prune_versions(&self, path: &SurfacePath) {
+        if self.keep_versions == 0 {
+            return;
+        }
+        let vdir = path.dir(&self.root).join("v");
+        let mut versions: Vec<Version> = match std::fs::read_dir(&vdir) {
+            Ok(rd) => rd
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+                .filter_map(|e| Version::parse(e.file_name().to_str()?).ok())
+                .collect(),
+            Err(_) => return,
+        };
+        if versions.len() <= self.keep_versions {
+            return;
+        }
+        versions.sort(); // ascending; oldest first
+        let remove = versions.len() - self.keep_versions;
+        for v in versions.into_iter().take(remove) {
+            let dir = path.version_dir(&self.root, v);
+            match std::fs::remove_dir_all(&dir) {
+                Ok(()) => tracing::debug!(surface = %path.id(), %v, "gc: removed old version"),
+                Err(e) => tracing::warn!(surface = %path.id(), %v, error = %e, "gc: remove failed"),
+            }
+        }
     }
 
     /// Publish a new version of a surface (latest-wins). Returns the minted [`Version`].
@@ -235,6 +278,7 @@ impl Workspace {
                 .with_context(|| format!("write handler entry for action {action:?}"))?;
         }
         tracing::info!(surface = %path.id(), %version, "published surface");
+        self.prune_versions(path);
         Ok(version)
     }
 
@@ -475,6 +519,32 @@ mod tests {
         assert_eq!(def.entry, "main.js");
         assert!(def.capabilities.kv && !def.capabilities.fs);
         assert!(manifest.backflow.unwrap().actions.contains(&"bump".to_string()));
+    }
+
+    #[test]
+    fn publish_gcs_old_versions_keeping_newest_n() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = Workspace::new(tmp.path()).with_keep_versions(3);
+        let p = SurfacePath::new("demo", "main", "s").unwrap();
+        let mut vs = Vec::new();
+        for i in 0..5 {
+            vs.push(ws.publish(&p, &SurfaceBuilder::new(format!("v{i}"), "a")).unwrap());
+        }
+        // Newest 3 retained; the two oldest GC'd. Live is still the newest publish.
+        assert_eq!(ws.live_version(&p), Some(*vs.last().unwrap()));
+        assert!(ws.read_version(&p, vs[0]).is_err(), "oldest pruned");
+        assert!(ws.read_version(&p, vs[1]).is_err(), "second-oldest pruned");
+        assert!(ws.read_version(&p, vs[2]).is_ok() && ws.read_version(&p, vs[4]).is_ok());
+        let kept = std::fs::read_dir(p.dir(ws.root()).join("v")).unwrap().count();
+        assert_eq!(kept, 3);
+
+        // keep_versions = 0 disables GC.
+        let ws0 = Workspace::new(tmp.path()).with_keep_versions(0);
+        let q = SurfacePath::new("demo", "main", "q").unwrap();
+        for i in 0..4 {
+            ws0.publish(&q, &SurfaceBuilder::new(format!("v{i}"), "a")).unwrap();
+        }
+        assert_eq!(std::fs::read_dir(q.dir(ws0.root()).join("v")).unwrap().count(), 4, "no GC when 0");
     }
 
     #[test]

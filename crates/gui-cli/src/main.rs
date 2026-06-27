@@ -18,6 +18,9 @@ struct Cli {
     /// Artifacts directory to operate on.
     #[arg(long, global = true, default_value = "artifacts")]
     artifacts: PathBuf,
+    /// Newest surface versions to keep per surface on publish (older are GC'd; 0 = keep all).
+    #[arg(long, global = true, default_value_t = gui_agent::DEFAULT_KEEP_VERSIONS)]
+    keep_versions: usize,
     #[command(subcommand)]
     cmd: Cmd,
 }
@@ -119,7 +122,7 @@ fn main() -> Result<()> {
             cmd_surface(&root, &agent, &deck, &surface, version, html)
         }
         Cmd::Publish { agent, surface, deck, title, alt, html, components } => {
-            cmd_publish(&root, &agent, &deck, &surface, &title, &alt, html, components)
+            cmd_publish(&root, cli.keep_versions, &agent, &deck, &surface, &title, &alt, html, components)
         }
         Cmd::Backflow { cmd } => match cmd {
             BackflowCmd::Tail { agent, surface, deck } => cmd_tail(&root, &agent, &deck, &surface),
@@ -251,6 +254,7 @@ fn cmd_surface(
 #[allow(clippy::too_many_arguments)]
 fn cmd_publish(
     root: &std::path::Path,
+    keep_versions: usize,
     agent: &str,
     deck: &str,
     surface: &str,
@@ -259,7 +263,7 @@ fn cmd_publish(
     html: Option<PathBuf>,
     components: Option<PathBuf>,
 ) -> Result<()> {
-    let ws = Workspace::new(root);
+    let ws = Workspace::new(root).with_keep_versions(keep_versions);
     let path = SurfacePath::new(agent, deck, surface).map_err(|e| anyhow::anyhow!(e.to_string()))?;
     let mut b = SurfaceBuilder::new(title, alt);
     match (html, components) {

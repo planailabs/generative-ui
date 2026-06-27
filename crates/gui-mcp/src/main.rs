@@ -11,6 +11,9 @@ struct Cli {
     /// Artifacts directory to publish surfaces into and read backflow from.
     #[arg(long, default_value = "artifacts")]
     artifacts: PathBuf,
+    /// Newest surface versions to keep per surface on publish (older are GC'd; 0 = keep all).
+    #[arg(long, default_value_t = gui_agent::DEFAULT_KEEP_VERSIONS)]
+    keep_versions: usize,
 }
 
 #[tokio::main]
@@ -23,5 +26,5 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let cli = Cli::parse();
-    gui_mcp::run_stdio(Workspace::new(cli.artifacts)).await
+    gui_mcp::run_stdio(Workspace::new(cli.artifacts).with_keep_versions(cli.keep_versions)).await
 }
