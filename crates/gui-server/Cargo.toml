@@ -1,0 +1,23 @@
+[package]
+name = "gui-server"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Discovers surfaces from the artifacts directory, serves them, and routes backflow back into the directory."
+
+[lib]
+name = "gui_server"
+path = "src/lib.rs"
+
+[[bin]]
+name = "gui-server"
+path = "src/main.rs"
+
+[dependencies]
+gui-schema.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
