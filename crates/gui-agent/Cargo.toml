@@ -11,6 +11,7 @@ serde_json.workspace = true
 anyhow.workspace = true
 notify.workspace = true
 time.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

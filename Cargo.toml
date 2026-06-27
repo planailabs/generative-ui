@@ -11,6 +11,7 @@ license = "MIT"
 gui-schema = { path = "crates/gui-schema" }
 gui-agent = { path = "crates/gui-agent" }
 gui-server = { path = "crates/gui-server" }
+gui-mcp = { path = "crates/gui-mcp" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -19,9 +20,12 @@ anyhow = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "fs", "time", "io-std", "net", "signal"] }
 axum = "0.8"
+tower-http = { version = "0.6", features = ["trace"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 arc-swap = "1"
 mime_guess = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 notify = "6"
 clap = { version = "4", features = ["derive"] }
 tempfile = "3"

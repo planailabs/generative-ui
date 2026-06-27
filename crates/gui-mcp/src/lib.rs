@@ -133,6 +133,7 @@ impl GuiServer {
         Parameters(p): Parameters<PublishParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let path = surface_path(&p.agent, &p.deck, &p.surface)?;
+        tracing::info!(surface = %path.id(), "tool: publish_surface");
         let mut b = SurfaceBuilder::new(p.title, p.alt_text);
         if let Some(html) = p.html {
             b = b.html(html);
@@ -185,6 +186,7 @@ impl GuiServer {
         Parameters(p): Parameters<WaitParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let path = surface_path(&p.agent, &p.deck, &p.surface)?;
+        tracing::info!(surface = %path.id(), "tool: wait_for_backflow");
         let ws = self.workspace.clone();
         let since = p.since;
         let timeout_ms = p.timeout_ms.unwrap_or(30_000);
@@ -280,6 +282,11 @@ impl ServerHandler for GuiServer {
                 .into(),
         );
         info.capabilities = ServerCapabilities::builder().enable_tools().build();
+        // Stable server name so clients see predictable tool names (e.g. `gui:publish_surface`).
+        let mut imp = rmcp::model::Implementation::default();
+        imp.name = "gui".into();
+        imp.version = env!("CARGO_PKG_VERSION").into();
+        info.server_info = imp;
         info
     }
 }
@@ -287,6 +294,19 @@ impl ServerHandler for GuiServer {
 /// Run the MCP server over stdio until the client disconnects.
 pub async fn run_stdio(workspace: Workspace) -> anyhow::Result<()> {
     let service = GuiServer::new(workspace).serve(stdio()).await?;
+    service.waiting().await?;
+    Ok(())
+}
+
+/// Serve the MCP server over an arbitrary byte stream (e.g. an in-process duplex), so a host
+/// can embed the server without spawning a subprocess.
+pub async fn serve_io<R, W>(workspace: Workspace, read: R, write: W) -> anyhow::Result<()>
+where
+    R: tokio::io::AsyncRead + Send + Unpin + 'static,
+    W: tokio::io::AsyncWrite + Send + Unpin + 'static,
+{
+    tracing::debug!("gui-mcp serving over in-process stream");
+    let service = GuiServer::new(workspace).serve((read, write)).await?;
     service.waiting().await?;
     Ok(())
 }

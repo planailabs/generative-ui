@@ -29,7 +29,10 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
     std::fs::write(&tmp, bytes)?;
     // rename is atomic within a filesystem; clean up the temp file on failure.
     match std::fs::rename(&tmp, path) {
-        Ok(()) => Ok(()),
+        Ok(()) => {
+            tracing::trace!(path = %path.display(), bytes = bytes.len(), "atomic write");
+            Ok(())
+        }
         Err(e) => {
             let _ = std::fs::remove_file(&tmp);
             Err(e)

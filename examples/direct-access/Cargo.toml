@@ -17,13 +17,18 @@ path = "src/main.rs"
 gui-schema.workspace = true
 gui-agent.workspace = true
 gui-server.workspace = true
+gui-mcp.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
 tokio.workspace = true
 clap.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
 async-trait = "0.1"
-# Latest swiftide from git (its OpenAI integration targets the current async-openai 0.41 API).
-swiftide = { git = "https://github.com/bosun-ai/swiftide", features = ["swiftide-agents"] }
+# Latest swiftide from git, with the MCP toolbox so the agent drives our gui-mcp server.
+swiftide = { git = "https://github.com/bosun-ai/swiftide", features = ["swiftide-agents", "mcp"] }
+# rmcp client to connect to the gui-mcp subprocess (must match swiftide's rmcp 0.17).
+rmcp = { version = "0.17", default-features = false, features = ["client", "transport-child-process"] }
 # Real OpenAI(-compatible) backend is opt-in: `--features openai`. We only use it to build a
 # client with a custom base URL; `chat-completion` exposes Client + config.
 # Pin to the version git swiftide's lockfile uses; >=0.33 otherwise resolves to 0.41 which

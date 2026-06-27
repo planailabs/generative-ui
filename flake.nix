@@ -26,7 +26,17 @@
           pname = "generative-ui";
           version = "0.1.0";
           src = ./.;
-          cargoLock.lockFile = ./Cargo.lock;
+          cargoLock = {
+            lockFile = ./Cargo.lock;
+            # The optional `direct-access` example depends on swiftide from git.
+            outputHashes = {
+              "swiftide-0.32.1" = "sha256-KL73CcfDKcfz5vqZ8HX3FjIjxyMMuPWsBTHRolmotXk=";
+            };
+          };
+          # Build only the core binaries. `direct-access` (git swiftide, edition-2024 manifest
+          # directive) needs a nightly cargo and is built with `cargo +nightly` outside Nix.
+          cargoBuildFlags = [ "--bin" "gui-server" "--bin" "gui-mcp" "--bin" "gui-cli" ];
+          doCheck = false;
         };
 
         binPkg = name:

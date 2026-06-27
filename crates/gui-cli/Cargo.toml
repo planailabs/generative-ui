@@ -18,6 +18,8 @@ anyhow.workspace = true
 clap.workspace = true
 time.workspace = true
 notify.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

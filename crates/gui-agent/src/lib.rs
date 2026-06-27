@@ -196,6 +196,7 @@ impl Workspace {
         atomic_write(&dir.join("frame.json"), &manifest_json).context("write frame.json")?;
         atomic_write(&dir.join("index.html"), builder.body_html().as_bytes())
             .context("write index.html")?;
+        tracing::info!(surface = %path.id(), %version, "published surface");
         Ok(version)
     }
 
@@ -298,8 +299,10 @@ impl Workspace {
         // oldest. Simple and correct; O(events) per poll (fine for modest event counts).
         let cursor = since.unwrap_or_else(|| now().0);
 
+        tracing::info!(surface = %path.id(), since = cursor, "waiting for backflow");
         // Already-present newer event? Return immediately.
         if let Some(ev) = self.read_backflow(path, Some(cursor))?.into_iter().next() {
+            tracing::debug!(surface = %path.id(), action = %ev.event.action, "backflow already present");
             return Ok(Some(ev));
         }
 

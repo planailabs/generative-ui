@@ -103,6 +103,12 @@ fn now() -> (u64, String) {
 }
 
 fn main() -> Result<()> {
+    use tracing_subscriber::EnvFilter;
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn,gui_cli=info")))
+        .with_writer(std::io::stderr)
+        .init();
+
     let cli = Cli::parse();
     let root = cli.artifacts;
     match cli.cmd {

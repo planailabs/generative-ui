@@ -18,19 +18,32 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    init_tracing();
     let cli = Cli::parse();
     let state = AppState::new(cli.artifacts.clone());
 
     let idx = state.index.load_full();
     for w in &idx.warnings {
-        eprintln!("warning: {w}");
+        tracing::warn!("{w}");
     }
-    eprintln!(
-        "discovered {} agent(s), {} surface(s) under {}",
-        idx.agents.len(),
-        idx.surface_count(),
-        cli.artifacts.display()
+    tracing::info!(
+        agents = idx.agents.len(),
+        surfaces = idx.surface_count(),
+        artifacts = %cli.artifacts.display(),
+        "discovered artifacts"
     );
 
     gui_server::serve(&cli.addr, state).await
+}
+
+/// Logs to stderr; level via `RUST_LOG` (default `info`, with `gui_server` at debug).
+fn init_tracing() {
+    use tracing_subscriber::EnvFilter;
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new("info,gui_server=debug,tower_http=debug")),
+        )
+        .with_writer(std::io::stderr)
+        .init();
 }

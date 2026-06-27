@@ -72,7 +72,8 @@ pub fn spawn_watcher(state: AppState) -> notify::Result<notify::RecommendedWatch
     let st = state.clone();
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         if res.is_ok() {
-            st.reload();
+            let idx = st.reload();
+            tracing::debug!(surfaces = idx.surface_count(), "re-indexed after fs change");
             // A simple ping; clients decide what to refetch. Surface views compare the live
             // version (robust against fs-watch races and ignores backflow, which never bumps
             // the version); the inspector just reloads.
@@ -108,6 +109,7 @@ pub fn router(state: AppState) -> Router {
         .route("/backflow/{agent}/{deck}/{surface}", post(backflow))
         .route("/{agent}/{seg}/", get(two_seg))
         .route("/{agent}/", get(agent_page))
+        .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(state)
 }
 
@@ -360,6 +362,7 @@ async fn backflow(
         received_at: iso,
     };
     let target = path.events_dir(&st.root).join(event.file_name(ms));
+    tracing::info!(surface = %path.id(), action = %event.action, "backflow received");
     let bytes = serde_json::to_vec_pretty(&event).expect("event serializes");
     match atomic_write(&target, &bytes) {
         Ok(()) => (

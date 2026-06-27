@@ -15,6 +15,13 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // MUST log to stderr: stdout carries the MCP JSON-RPC protocol.
+    use tracing_subscriber::EnvFilter;
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,gui_mcp=debug")))
+        .with_writer(std::io::stderr)
+        .init();
+
     let cli = Cli::parse();
     gui_mcp::run_stdio(Workspace::new(cli.artifacts)).await
 }
