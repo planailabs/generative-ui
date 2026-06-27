@@ -464,6 +464,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "gui-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "gui-agent",
+ "gui-schema",
+ "gui-server",
+ "notify",
+ "serde_json",
+ "tempfile",
+ "time",
+]
+
+[[package]]
 name = "gui-mcp"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,23 @@
+[package]
+name = "gui-cli"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Debug/ops CLI for the Generative UI Suite: inspect the directory, validate manifests, publish, and tail/emit backflow."
+
+[[bin]]
+name = "gui"
+path = "src/main.rs"
+
+[dependencies]
+gui-schema.workspace = true
+gui-agent.workspace = true
+gui-server.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+time.workspace = true
+notify.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
