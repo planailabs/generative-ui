@@ -1,0 +1,9 @@
+{
+  "schema_version": "generative-ui/surface.v1",
+  "title": "Notes (filesystem)",
+  "alt_text": "Save a note via a handler that writes to the jailed filesystem and KV",
+  "handlers": {
+    "save": { "lang": "js", "entry": "main.js", "capabilities": { "fs": true, "kv": true } }
+  },
+  "nav": [{ "to": "counter-js", "label": "Counters" }]
+}

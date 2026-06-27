@@ -1,0 +1,13 @@
+{
+  "schema_version": "generative-ui/surface.v1",
+  "title": "Counter (JS)",
+  "alt_text": "A click counter backed by a sandboxed JavaScript handler",
+  "handlers": {
+    "bump": { "lang": "js", "entry": "main.js", "capabilities": { "kv": true } }
+  },
+  "nav": [
+    { "to": "counter-lua", "label": "Lua" },
+    { "to": "counter-wasm", "label": "WASM" },
+    { "to": "notes", "label": "Notes (fs)" }
+  ]
+}

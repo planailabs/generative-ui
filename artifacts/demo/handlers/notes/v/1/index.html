@@ -1,0 +1,7 @@
+<ui-heading level="1">Notes</ui-heading>
+<ui-text>The handler persists your note to the surface's jailed <code>state/</code> directory and mirrors it into KV. Submitting saves it; the last saved note is read back from disk below.</ui-text>
+<ui-form data-action="save">
+  <ui-input name="note" label="Note" placeholder="Type something…"></ui-input>
+</ui-form>
+<ui-text>last saved: <span data-kv="last"></span></ui-text>
+<ui-deck-nav></ui-deck-nav>

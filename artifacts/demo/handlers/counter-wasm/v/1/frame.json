@@ -1,0 +1,13 @@
+{
+  "schema_version": "generative-ui/surface.v1",
+  "title": "Counter (WASM)",
+  "alt_text": "A click counter backed by a sandboxed WebAssembly handler",
+  "handlers": {
+    "bump": { "lang": "wasm", "entry": "main.wasm", "capabilities": { "kv": true } }
+  },
+  "nav": [
+    { "to": "counter-js", "label": "JS" },
+    { "to": "counter-lua", "label": "Lua" },
+    { "to": "notes", "label": "Notes (fs)" }
+  ]
+}

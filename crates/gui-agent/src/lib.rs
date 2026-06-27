@@ -298,11 +298,10 @@ impl Workspace {
                 Some(m) => m,
                 None => continue,
             };
-            if let Some(s) = since {
-                if millis <= s {
+            if let Some(s) = since
+                && millis <= s {
                     continue;
                 }
-            }
             let event: Event = match std::fs::read(entry.path())
                 .ok()
                 .and_then(|b| serde_json::from_slice(&b).ok())

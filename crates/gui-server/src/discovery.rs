@@ -60,11 +60,10 @@ impl Deck {
         let mut out: Vec<&Surface> = Vec::new();
         let mut seen: BTreeSet<&str> = BTreeSet::new();
         for slug in &self.manifest.order {
-            if let Some(s) = self.surfaces.get(slug) {
-                if seen.insert(slug.as_str()) {
+            if let Some(s) = self.surfaces.get(slug)
+                && seen.insert(slug.as_str()) {
                     out.push(s);
                 }
-            }
         }
         let mut rest: Vec<&Surface> = self
             .surfaces
@@ -82,11 +81,10 @@ impl Deck {
 
     /// The deck's entry surface: `deck.json` `entry` if it resolves, else the first in order.
     pub fn entry(&self) -> Option<&Surface> {
-        if let Some(e) = &self.manifest.entry {
-            if let Some(s) = self.surfaces.get(e) {
+        if let Some(e) = &self.manifest.entry
+            && let Some(s) = self.surfaces.get(e) {
                 return Some(s);
             }
-        }
         self.ordered_surfaces().into_iter().next()
     }
 }
@@ -250,11 +248,10 @@ fn read_subdirs(dir: &Path) -> std::io::Result<Vec<String>> {
     let mut out = Vec::new();
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
-        if entry.file_type()?.is_dir() {
-            if let Some(name) = entry.file_name().to_str() {
+        if entry.file_type()?.is_dir()
+            && let Some(name) = entry.file_name().to_str() {
                 out.push(name.to_string());
             }
-        }
     }
     Ok(out)
 }

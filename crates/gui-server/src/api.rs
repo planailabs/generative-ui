@@ -121,7 +121,7 @@ pub fn activity_response(idx: &Index) -> ActivityResponse {
             }
         }
     }
-    publishes.sort_by(|a, b| b.0.cmp(&a.0));
+    publishes.sort_by_key(|p| std::cmp::Reverse(p.0));
     ActivityResponse {
         publishes: publishes.into_iter().map(|(_, item)| item).collect(),
     }

@@ -1,0 +1,5 @@
+{
+  "name": "Handlers demo",
+  "entry": "counter-js",
+  "order": ["counter-js", "counter-lua", "counter-wasm", "notes"]
+}

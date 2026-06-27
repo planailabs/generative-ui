@@ -124,7 +124,7 @@ pub fn inspector_page(idx: &Index, root: &std::path::Path) -> String {
                     ver = live.version,
                     nv = surface.versions.len(),
                     ev = events,
-                    idpath = esc(&surface.path.url().trim_end_matches('/').to_string()),
+                    idpath = esc(surface.path.url().trim_end_matches('/')),
                 ));
             }
             body.push_str("</ul>");

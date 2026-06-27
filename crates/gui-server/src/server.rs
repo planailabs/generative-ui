@@ -158,7 +158,7 @@ fn read_surface_events(root: &FsPath, path: &SurfacePath, limit: usize) -> Vec<E
             }
         }
     }
-    evs.sort_by(|a, b| b.0.cmp(&a.0));
+    evs.sort_by_key(|e| std::cmp::Reverse(e.0));
     evs.into_iter().take(limit).map(|(_, e)| e).collect()
 }
 
@@ -316,11 +316,10 @@ async fn two_seg(State(st): State<AppState>, Path((agent, seg)): Path<(String, S
             None => not_found(),
         };
     }
-    if let Ok(p) = SurfacePath::new(&agent, DEFAULT_DECK, &seg) {
-        if idx.surface(&p).is_some() {
+    if let Ok(p) = SurfacePath::new(&agent, DEFAULT_DECK, &seg)
+        && idx.surface(&p).is_some() {
             return serve_surface(&idx, &p, None);
         }
-    }
     not_found()
 }
 
@@ -397,11 +396,10 @@ async fn backflow(
 
     // If a handler is registered for this action (and execution is enabled), run it: it folds
     // KV from the event and defines the HTTP response. Handlers never touch the surface HTML.
-    if st.enable_handlers {
-        if let Some(def) = found.live().manifest.handlers.get(&event.action).cloned() {
+    if st.enable_handlers
+        && let Some(def) = found.live().manifest.handlers.get(&event.action).cloned() {
             return run_surface_handler(&st, &path, found.live().dir.clone(), def, event).await;
         }
-    }
 
     (
         StatusCode::ACCEPTED,

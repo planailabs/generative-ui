@@ -11,6 +11,18 @@ fn write(path: &Path, contents: &str) {
     fs::write(path, contents).unwrap();
 }
 
+fn copy_dir(src: &Path, dst: &Path) {
+    fs::create_dir_all(dst).unwrap();
+    for entry in fs::read_dir(src).unwrap().filter_map(|e| e.ok()) {
+        let (from, to) = (entry.path(), dst.join(entry.file_name()));
+        if from.is_dir() {
+            copy_dir(&from, &to);
+        } else {
+            fs::copy(&from, &to).unwrap();
+        }
+    }
+}
+
 fn manifest(title: &str, extra: &str) -> String {
     format!(
         r#"{{"schema_version":"generative-ui/surface.v1","title":"{title}","alt_text":"a"{extra}}}"#
@@ -257,6 +269,61 @@ async fn js_handler_dispatch_folds_kv_and_defines_response() {
         .unwrap();
     assert_eq!(kv["hits"], 2);
     assert!(tmp.path().join("demo/main/counter/state/kv.json").exists());
+}
+
+#[tokio::test]
+async fn example_deck_all_three_engines_fold_kv_identically() {
+    // Serve the committed example deck (copied to a tempdir so the run doesn't dirty the repo)
+    // and prove the JS, Lua, and WASM counters behave identically through the real HTTP server,
+    // including the committed main.wasm.
+    let tmp = tempfile::tempdir().unwrap();
+    let repo_deck = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../artifacts/demo/handlers");
+    copy_dir(&repo_deck, &tmp.path().join("demo/handlers"));
+
+    let state = AppState::new(tmp.path().to_path_buf()).with_handlers(true);
+    let base = start_with(state).await;
+    let http = reqwest::Client::new();
+
+    for surface in ["counter-js", "counter-lua", "counter-wasm"] {
+        let res = http
+            .post(format!("{base}/backflow/demo/handlers/{surface}"))
+            .json(&serde_json::json!({ "action": "bump" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 200, "{surface}: handler defines the response");
+        let body: serde_json::Value = res.json().await.unwrap();
+        assert_eq!(body["hits"], 1, "{surface}: response body");
+
+        let kv: serde_json::Value = http
+            .get(format!("{base}/api/demo/handlers/{surface}/kv.json"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(kv["hits"], 1, "{surface}: KV folded + persisted");
+    }
+
+    // The fs-backed notes handler persists to the jailed state/ dir and mirrors into KV.
+    let res = http
+        .post(format!("{base}/backflow/demo/handlers/notes"))
+        .json(&serde_json::json!({ "action": "save", "component": "ui-form", "value": { "note": "hello" } }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+    let kv: serde_json::Value = http
+        .get(format!("{base}/api/demo/handlers/notes/kv.json"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(kv["last"], "hello");
+    assert!(tmp.path().join("demo/handlers/notes/state/last.txt").exists());
 }
 
 #[tokio::test]
