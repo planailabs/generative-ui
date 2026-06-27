@@ -35,7 +35,7 @@
           };
           # Build only the core binaries. `direct-access` (git swiftide, edition-2024 manifest
           # directive) needs a nightly cargo and is built with `cargo +nightly` outside Nix.
-          cargoBuildFlags = [ "--bin" "gui-server" "--bin" "gui-mcp" "--bin" "gui-cli" ];
+          cargoBuildFlags = [ "--bin" "gui-server" "--bin" "gui-mcp" "--bin" "gui" ];
           doCheck = false;
         };
 
@@ -56,13 +56,13 @@
           generative-ui = workspace;
           gui-server = binPkg "gui-server";
           gui-mcp = binPkg "gui-mcp";
-          gui-cli = binPkg "gui-cli";
+          gui-cli = binPkg "gui"; # the gui-cli crate's binary is named `gui`
         };
 
         apps = {
           gui-server = app "gui-server";
           gui-mcp = app "gui-mcp";
-          gui-cli = app "gui-cli";
+          gui-cli = app "gui";
         };
 
         devShells.default = pkgs.mkShell {

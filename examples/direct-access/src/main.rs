@@ -30,13 +30,18 @@ struct Cli {
     /// Custom OpenAI-compatible base URL (key from OPENAI_API_KEY).
     #[arg(long)]
     base_url: Option<String>,
-    /// What the agent should build.
-    #[arg(
-        long,
-        default_value = "Build a small welcome app: a home screen that greets the user and a button to get started."
-    )]
-    goal: String,
+    /// What the agent should build. If omitted, the agent first asks the user via a chat
+    /// surface (open it in the browser) and builds whatever they request.
+    #[arg(long)]
+    goal: Option<String>,
 }
+
+/// Instruction used when no `--goal` is given: ask the user through the UI, then build.
+const INTERACTIVE_GOAL: &str = "No goal was given yet. First call publish_surface for agent \
+\"assistant\", deck \"main\", surface \"chat\": a heading asking \"What app should I build?\" \
+and a form (action \"submit\") containing a text input named \"goal\". Then call \
+wait_for_backflow on assistant/main/chat to receive the user's answer (the \"goal\" field of \
+the event value). Then build exactly what they asked for as one or more surfaces, and stop.";
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -60,16 +65,20 @@ async fn main() -> Result<()> {
             eprintln!("server error: {e}");
         }
     });
+    let goal = cli.goal.clone().unwrap_or_else(|| INTERACTIVE_GOAL.to_string());
+    if cli.goal.is_none() {
+        eprintln!("no --goal given: the agent will ask via http://{}/assistant/chat/", cli.addr);
+    }
     eprintln!("inspector: http://{}/  (the agent's screens appear here as it builds them)", cli.addr);
 
     if cli.mock {
-        return direct_access::run_agent(direct_access::MockLlm, cli.artifacts, &cli.goal).await;
+        return direct_access::run_agent(direct_access::MockLlm, cli.artifacts, &goal).await;
     }
 
     #[cfg(feature = "openai")]
     {
         let llm = build_openai(&cli.model, cli.base_url.as_deref())?;
-        direct_access::run_agent(llm, cli.artifacts, &cli.goal).await
+        direct_access::run_agent(llm, cli.artifacts, &goal).await
     }
     #[cfg(not(feature = "openai"))]
     {
