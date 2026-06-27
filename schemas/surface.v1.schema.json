@@ -18,6 +18,41 @@
         "actions": { "type": "array", "items": { "type": "string" } }
       }
     },
+    "handlers": {
+      "type": "object",
+      "description": "Sandboxed handlers keyed by backflow action. The server runs the matching handler when an interaction with that action arrives (opt-in via --enable-handlers). Handlers never edit the surface; they fold the backflow log into the surface's KV view.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["lang", "entry"],
+        "properties": {
+          "lang": { "enum": ["js", "lua", "wasm"], "description": "Guest engine." },
+          "entry": { "type": "string", "description": "Entry file relative to the version dir, e.g. main.js / main.lua / main.wasm." },
+          "capabilities": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Default-deny: an absent field grants nothing.",
+            "properties": {
+              "http": { "type": "array", "items": { "type": "string" }, "description": "Allowed outbound HTTP hosts (exact match). Empty ⇒ no network." },
+              "fs": { "type": "boolean", "description": "Read/write within the surface's jailed state/ dir." },
+              "kv": { "type": "boolean", "description": "Read/write the surface's KV view." }
+            }
+          },
+          "limits": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Hard limits enforced host-side, identically across engines.",
+            "properties": {
+              "wall_ms": { "type": "integer", "minimum": 0 },
+              "mem_mb": { "type": "integer", "minimum": 0 },
+              "http_calls": { "type": "integer", "minimum": 0 },
+              "resp_kb": { "type": "integer", "minimum": 0 },
+              "fs_kb": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
     "nav": {
       "type": "array",
       "description": "Edges to other surfaces in the deck, by surface slug.",

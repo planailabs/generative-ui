@@ -7,6 +7,7 @@
 //! renders to `<ui-*>` HTML. Reserved manifest keys are a closed set
 //! (`deny_unknown_fields`); free-form data lives only under `metadata`.
 
+use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -146,6 +147,17 @@ impl SurfacePath {
     pub fn events_dir(&self, root: &Path) -> PathBuf {
         self.dir(root).join("events")
     }
+
+    /// `.../state` — server-written handler state (sibling of `v/` and `events/`; ignored by
+    /// discovery, which only reads `v/`).
+    pub fn state_dir(&self, root: &Path) -> PathBuf {
+        self.dir(root).join("state")
+    }
+
+    /// `.../state/kv.json` — the materialized KV view folded from the backflow log.
+    pub fn kv_path(&self, root: &Path) -> PathBuf {
+        self.state_dir(root).join("kv.json")
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -163,6 +175,10 @@ pub struct Manifest {
     pub created_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backflow: Option<Backflow>,
+    /// Sandboxed handlers, keyed by backflow action. The server runs the matching handler
+    /// when an interaction with that action arrives (opt-in via `--enable-handlers`).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub handlers: BTreeMap<String, HandlerDef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub nav: Vec<NavEdge>,
     #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
@@ -177,8 +193,102 @@ impl Manifest {
             alt_text: alt_text.into(),
             created_at: None,
             backflow: None,
+            handlers: BTreeMap::new(),
             nav: Vec::new(),
             metadata: serde_json::Map::new(),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Handlers (sandboxed backflow logic)
+// ---------------------------------------------------------------------------
+
+/// Which guest engine runs a handler. The `entry` file extension follows by convention
+/// (`main.js` / `main.lua` / `main.wasm`) but `lang` is authoritative.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum HandlerLang {
+    Js,
+    Lua,
+    Wasm,
+}
+
+/// One handler attached to a backflow action: the engine, the entry file (relative to the
+/// surface version dir), and the capabilities/limits the sandbox grants it.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct HandlerDef {
+    pub lang: HandlerLang,
+    pub entry: String,
+    #[serde(default)]
+    pub capabilities: Capabilities,
+    #[serde(default)]
+    pub limits: Limits,
+}
+
+/// What a handler is allowed to reach. Default-deny: an absent/empty field grants nothing.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
+#[serde(deny_unknown_fields)]
+pub struct Capabilities {
+    /// Allowed outbound HTTP hosts (exact host match). Empty ⇒ no network.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub http: Vec<String>,
+    /// Read/write within the surface's jailed `state/` dir.
+    #[serde(default)]
+    pub fs: bool,
+    /// Read/write the surface's KV view.
+    #[serde(default)]
+    pub kv: bool,
+}
+
+/// Hard resource limits enforced host-side, identically across all engines.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Limits {
+    /// Wall-clock budget for one invocation.
+    #[serde(default = "Limits::default_wall_ms")]
+    pub wall_ms: u64,
+    /// Max guest heap.
+    #[serde(default = "Limits::default_mem_mb")]
+    pub mem_mb: u64,
+    /// Max `http.fetch` calls per invocation.
+    #[serde(default = "Limits::default_http_calls")]
+    pub http_calls: u32,
+    /// Max bytes of a single HTTP response body the host will read.
+    #[serde(default = "Limits::default_resp_kb")]
+    pub resp_kb: u64,
+    /// Max bytes a single `fs.write` may write.
+    #[serde(default = "Limits::default_fs_kb")]
+    pub fs_kb: u64,
+}
+
+impl Limits {
+    fn default_wall_ms() -> u64 {
+        2000
+    }
+    fn default_mem_mb() -> u64 {
+        32
+    }
+    fn default_http_calls() -> u32 {
+        4
+    }
+    fn default_resp_kb() -> u64 {
+        512
+    }
+    fn default_fs_kb() -> u64 {
+        256
+    }
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            wall_ms: Self::default_wall_ms(),
+            mem_mb: Self::default_mem_mb(),
+            http_calls: Self::default_http_calls(),
+            resp_kb: Self::default_resp_kb(),
+            fs_kb: Self::default_fs_kb(),
         }
     }
 }
@@ -523,7 +633,50 @@ mod tests {
             p.version_dir(root, Version(7)),
             Path::new("/artifacts/demo/main/sales/v/7")
         );
+        assert_eq!(p.state_dir(root), Path::new("/artifacts/demo/main/sales/state"));
+        assert_eq!(p.kv_path(root), Path::new("/artifacts/demo/main/sales/state/kv.json"));
         assert!(SurfacePath::new("demo", "main", "../x").is_err());
+    }
+
+    #[test]
+    fn handlers_roundtrip_and_defaults() {
+        // Full handler def round-trips.
+        let mut handlers = BTreeMap::new();
+        handlers.insert(
+            "bump".to_string(),
+            HandlerDef {
+                lang: HandlerLang::Js,
+                entry: "main.js".into(),
+                capabilities: Capabilities {
+                    http: vec!["api.example.com".into()],
+                    fs: true,
+                    kv: true,
+                },
+                limits: Limits {
+                    wall_ms: 1000,
+                    ..Limits::default()
+                },
+            },
+        );
+        let m = Manifest {
+            handlers,
+            ..Manifest::new("t", "a")
+        };
+        let back: Manifest = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
+        assert_eq!(m, back);
+        assert_eq!(back.handlers["bump"].lang, HandlerLang::Js);
+
+        // Partial handler: limits/capabilities default (default-deny + default limits).
+        let def: HandlerDef =
+            serde_json::from_str(r#"{"lang":"wasm","entry":"main.wasm"}"#).unwrap();
+        assert_eq!(def.lang, HandlerLang::Wasm);
+        assert_eq!(def.capabilities, Capabilities::default());
+        assert!(def.capabilities.http.is_empty() && !def.capabilities.fs && !def.capabilities.kv);
+        assert_eq!(def.limits, Limits::default());
+        assert_eq!(def.limits.wall_ms, 2000);
+
+        // lang serializes lowercase.
+        assert_eq!(serde_json::to_value(HandlerLang::Lua).unwrap(), serde_json::json!("lua"));
     }
 
     #[test]
@@ -536,6 +689,7 @@ mod tests {
             backflow: Some(Backflow {
                 actions: vec!["refresh".into()],
             }),
+            handlers: BTreeMap::new(),
             nav: vec![NavEdge {
                 to: "settings".into(),
                 label: Some("Settings".into()),

@@ -150,6 +150,7 @@ impl SurfaceBuilder {
             backflow: (!self.actions.is_empty()).then(|| gui_schema::Backflow {
                 actions: self.actions.clone(),
             }),
+            handlers: Default::default(),
             nav: self.nav.clone(),
             metadata: self.metadata.clone(),
         }
