@@ -8,6 +8,7 @@
 
 mod crypto;
 mod engine;
+mod facade;
 mod host;
 
 #[cfg(feature = "js")]

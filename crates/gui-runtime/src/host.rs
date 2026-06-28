@@ -191,43 +191,14 @@ impl Host {
     }
 
     /// The single entry point every engine calls. `op` selects the operation; `args` is a JSON
-    /// object of named parameters. Returns the JSON result (null for void ops).
+    /// object of named parameters. Routing, the facade and capability checks all derive from the
+    /// one host API tree in [`crate::facade`] — this resolves the leaf whose op-id is `op` and
+    /// runs it. Crypto leaves forward to the crypto router; it is ungated (pure compute).
     pub fn dispatch(&mut self, op: &str, args: &Value) -> Result<Value, HostError> {
-        match op {
-            "kv.get" => self.kv_get(scope_arg(args), str_arg(args, "key")?),
-            "kv.set" => {
-                self.kv_set(scope_arg(args), str_arg(args, "key")?, arg(args, "value"))?;
-                Ok(Value::Null)
-            }
-            "kv.all" => self.kv_all(scope_arg(args)),
-            "http.fetch" => {
-                let req = HttpRequest::from_json(args.get("request").unwrap_or(&Value::Null))?;
-                Ok(self.http_fetch(req)?.to_json())
-            }
-            "fs.read" => self.fs_read(str_arg(args, "path")?),
-            "fs.write" => {
-                self.fs_write(str_arg(args, "path")?, str_arg(args, "data")?)?;
-                Ok(Value::Null)
-            }
-            "fs.list" => self.fs_list(args.get("prefix").and_then(|v| v.as_str()).unwrap_or("")),
-            "log" => {
-                let level = args.get("level").and_then(|v| v.as_str()).unwrap_or("info");
-                self.log(level, str_arg(args, "message").unwrap_or(""));
-                Ok(Value::Null)
-            }
-            "emit" => {
-                self.emit(scope_arg(args), str_arg(args, "name")?, arg(args, "data"));
-                Ok(Value::Null)
-            }
-            "respond" => {
-                let status = args.get("status").and_then(|v| v.as_u64()).unwrap_or(200);
-                self.set_response(status.clamp(100, 599) as u16, arg(args, "body"));
-                Ok(Value::Null)
-            }
-            "status_codes" => Ok(Value::Object(status_codes())),
-            // Crypto is pure compute (no I/O, no ambient authority) → ungated, always available.
-            _ if op.starts_with("crypto.") => crate::crypto::dispatch(op, args),
-            other => Err(HostError::Other(format!("unknown host op {other:?}"))),
+        let root = crate::facade::root();
+        match crate::facade::find_op(&root, op) {
+            Some(node) => node.call(self, args),
+            None => Err(HostError::Other(format!("unknown host op {op:?}"))),
         }
     }
 
@@ -407,18 +378,18 @@ impl Host {
 }
 
 /// `args.scope == "private"` ⇒ `Private`, else `Public`.
-fn scope_arg(args: &Value) -> Scope {
+pub(crate) fn scope_arg(args: &Value) -> Scope {
     match args.get("scope").and_then(|v| v.as_str()) {
         Some("private") => Scope::Private,
         _ => Scope::Public,
     }
 }
 
-fn arg(args: &Value, key: &str) -> Value {
+pub(crate) fn arg(args: &Value, key: &str) -> Value {
     args.get(key).cloned().unwrap_or(Value::Null)
 }
 
-fn str_arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, HostError> {
+pub(crate) fn str_arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, HostError> {
     args.get(key)
         .and_then(|v| v.as_str())
         .ok_or_else(|| HostError::Other(format!("missing string arg {key:?}")))

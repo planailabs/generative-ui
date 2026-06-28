@@ -22,74 +22,6 @@ impl LuaEngine {
     }
 }
 
-/// The ergonomic `host` table, built over the single `__host_call` primitive. Returns the
-/// table; mirrors the JS facade exactly. `__host_call` returns JSON; we decode via the engine.
-const PRELUDE: &str = r#"
-local call = function(op, args) return __decode(__host_call(op, __encode(args or {}))) end
-local function kv(scope)
-  return {
-    get = function(k) return call("kv.get", { scope = scope, key = tostring(k) }) end,
-    set = function(k, v) return call("kv.set", { scope = scope, key = tostring(k), value = v }) end,
-    all = function() return call("kv.all", { scope = scope }) end,
-  }
-end
-local function merge(base, extra)
-  if extra then for k, v in pairs(extra) do base[k] = v end end
-  return base
-end
-return {
-  crypto = {
-    randomBytes = function(n, enc) return call("crypto.randomBytes", { bytes = n, encoding = enc or "hex" }) end,
-    uuid = function() return call("crypto.uuid", {}) end,
-    hash = function(algo, data, opts) return call("crypto.hash", merge({ algo = tostring(algo), data = tostring(data) }, opts)) end,
-    hmac = function(algo, key, data, opts) return call("crypto.hmac", merge({ algo = tostring(algo), key = tostring(key), data = tostring(data) }, opts)) end,
-    verifyHmac = function(algo, key, data, signature, opts) return call("crypto.verifyHmac", merge({ algo = tostring(algo), key = tostring(key), data = tostring(data), signature = tostring(signature) }, opts)) end,
-    encode = function(data, from, to) return call("crypto.encode", { data = tostring(data), from = from or "utf8", to = to or "hex" }) end,
-    pbkdf2 = function(password, salt, opts) return call("crypto.pbkdf2", merge({ password = tostring(password), salt = tostring(salt) }, opts)) end,
-    hkdf = function(params) return call("crypto.hkdf", params or {}) end,
-    constantTimeEqual = function(a, b, enc) return call("crypto.constantTimeEqual", { a = tostring(a), b = tostring(b), encoding = enc or "hex" }) end,
-    aead = {
-      seal = function(params) return call("crypto.aead.seal", params or {}) end,
-      open = function(params) return call("crypto.aead.open", params or {}) end,
-    },
-    ed25519 = {
-      keypair = function(enc) return call("crypto.ed25519.keypair", { encoding = enc or "hex" }) end,
-      sign = function(privateKey, data, opts) return call("crypto.ed25519.sign", merge({ privateKey = tostring(privateKey), data = tostring(data) }, opts)) end,
-      verify = function(publicKey, data, signature, opts) return call("crypto.ed25519.verify", merge({ publicKey = tostring(publicKey), data = tostring(data), signature = tostring(signature) }, opts)) end,
-    },
-    ecdsa = {
-      keypair = function(curve, enc) return call("crypto.ecdsa.keypair", { curve = curve or "p256", encoding = enc or "hex" }) end,
-      sign = function(privateKey, data, opts) return call("crypto.ecdsa.sign", merge({ privateKey = tostring(privateKey), data = tostring(data) }, opts)) end,
-      verify = function(publicKey, data, signature, opts) return call("crypto.ecdsa.verify", merge({ publicKey = tostring(publicKey), data = tostring(data), signature = tostring(signature) }, opts)) end,
-    },
-    rsa = {
-      sign = function(privateKey, data, opts) return call("crypto.rsa.sign", merge({ privateKey = tostring(privateKey), data = tostring(data) }, opts)) end,
-      verify = function(publicKey, data, signature, opts) return call("crypto.rsa.verify", merge({ publicKey = tostring(publicKey), data = tostring(data), signature = tostring(signature) }, opts)) end,
-    },
-    x25519 = {
-      keypair = function(enc) return call("crypto.x25519.keypair", { encoding = enc or "hex" }) end,
-      deriveShared = function(privateKey, publicKey, opts) return call("crypto.x25519.deriveShared", merge({ privateKey = tostring(privateKey), publicKey = tostring(publicKey) }, opts)) end,
-    },
-  },
-  kv = kv("public"),
-  kvPrivate = kv("private"),
-  http = { fetch = function(req) return call("http.fetch", { request = req }) end },
-  fs = {
-    read = function(p) return call("fs.read", { path = tostring(p) }) end,
-    write = function(p, d) return call("fs.write", { path = tostring(p), data = tostring(d) }) end,
-    list = function(p) return call("fs.list", { prefix = tostring(p or "") }) end,
-  },
-  log = function(level, msg) return call("log", { level = tostring(level), message = tostring(msg) }) end,
-  emit = function(name, data) return call("emit", { scope = "public", name = tostring(name), data = data }) end,
-  emitPrivate = function(name, data) return call("emit", { scope = "private", name = tostring(name), data = data }) end,
-  response = function(code, body)
-    if body == nil then body = code; code = 200 end
-    return call("respond", { status = code, body = body })
-  end,
-  responseCode = call("status_codes", {}),
-}
-"#;
-
 impl Engine for LuaEngine {
     fn run(&self, inv: &Invocation, host: SharedHost) -> Result<HandlerResponse, HandlerError> {
         let source = std::fs::read_to_string(inv.entry)
@@ -126,7 +58,7 @@ fn run_inner(
     event: &serde_json::Value,
 ) -> mlua::Result<serde_json::Value> {
     bind_host_call(lua, host)?;
-    let host_tbl: mlua::Table = lua.load(PRELUDE).set_name("host_prelude").eval()?;
+    let host_tbl: mlua::Table = lua.load(crate::facade::lua_prelude()).set_name("host_prelude").eval()?;
     lua.sandbox(true)?;
 
     let handle: mlua::Function = lua.load(source).set_name("main.lua").eval()?;

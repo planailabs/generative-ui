@@ -23,70 +23,6 @@ impl JsEngine {
     }
 }
 
-/// The ergonomic `host` facade, built once over the single `__host_call` primitive. Mirrors
-/// the Lua table and the WASM guest helpers exactly.
-const PRELUDE: &str = r#"
-globalThis.host = (() => {
-  const call = (op, args) => JSON.parse(__host_call(op, JSON.stringify(args || {})));
-  const kv = (scope) => ({
-    get: (k) => call("kv.get", { scope, key: String(k) }),
-    set: (k, v) => call("kv.set", { scope, key: String(k), value: v === undefined ? null : v }),
-    all: () => call("kv.all", { scope }),
-  });
-  return {
-    kv: kv("public"),
-    kvPrivate: kv("private"),
-    http: { fetch: (req) => call("http.fetch", { request: req }) },
-    fs: {
-      read: (p) => call("fs.read", { path: String(p) }),
-      write: (p, d) => call("fs.write", { path: String(p), data: String(d) }),
-      list: (p) => call("fs.list", { prefix: String(p || "") }),
-    },
-    crypto: (() => {
-      const c = (op, args) => call("crypto." + op, args);
-      return {
-        randomBytes: (n, enc) => c("randomBytes", { bytes: n | 0, encoding: enc || "hex" }),
-        uuid: () => c("uuid", {}),
-        hash: (algo, data, opts) => c("hash", { algo: String(algo), data: String(data), ...(opts || {}) }),
-        hmac: (algo, key, data, opts) => c("hmac", { algo: String(algo), key: String(key), data: String(data), ...(opts || {}) }),
-        verifyHmac: (algo, key, data, signature, opts) => c("verifyHmac", { algo: String(algo), key: String(key), data: String(data), signature: String(signature), ...(opts || {}) }),
-        encode: (data, from, to) => c("encode", { data: String(data), from: from || "utf8", to: to || "hex" }),
-        pbkdf2: (password, salt, opts) => c("pbkdf2", { password: String(password), salt: String(salt), ...(opts || {}) }),
-        hkdf: (params) => c("hkdf", params || {}),
-        constantTimeEqual: (a, b, enc) => c("constantTimeEqual", { a: String(a), b: String(b), encoding: enc || "hex" }),
-        aead: { seal: (params) => c("aead.seal", params || {}), open: (params) => c("aead.open", params || {}) },
-        ed25519: {
-          keypair: (enc) => c("ed25519.keypair", { encoding: enc || "hex" }),
-          sign: (privateKey, data, opts) => c("ed25519.sign", { privateKey: String(privateKey), data: String(data), ...(opts || {}) }),
-          verify: (publicKey, data, signature, opts) => c("ed25519.verify", { publicKey: String(publicKey), data: String(data), signature: String(signature), ...(opts || {}) }),
-        },
-        ecdsa: {
-          keypair: (curve, enc) => c("ecdsa.keypair", { curve: curve || "p256", encoding: enc || "hex" }),
-          sign: (privateKey, data, opts) => c("ecdsa.sign", { privateKey: String(privateKey), data: String(data), ...(opts || {}) }),
-          verify: (publicKey, data, signature, opts) => c("ecdsa.verify", { publicKey: String(publicKey), data: String(data), signature: String(signature), ...(opts || {}) }),
-        },
-        rsa: {
-          sign: (privateKey, data, opts) => c("rsa.sign", { privateKey: String(privateKey), data: String(data), ...(opts || {}) }),
-          verify: (publicKey, data, signature, opts) => c("rsa.verify", { publicKey: String(publicKey), data: String(data), signature: String(signature), ...(opts || {}) }),
-        },
-        x25519: {
-          keypair: (enc) => c("x25519.keypair", { encoding: enc || "hex" }),
-          deriveShared: (privateKey, publicKey, opts) => c("x25519.deriveShared", { privateKey: String(privateKey), publicKey: String(publicKey), ...(opts || {}) }),
-        },
-      };
-    })(),
-    log: (level, msg) => call("log", { level: String(level), message: String(msg) }),
-    emit: (name, data) => call("emit", { scope: "public", name: String(name), data: data === undefined ? null : data }),
-    emitPrivate: (name, data) => call("emit", { scope: "private", name: String(name), data: data === undefined ? null : data }),
-    response: (code, body) => {
-      if (body === undefined) { body = code; code = 200; }
-      call("respond", { status: code | 0, body: body === undefined ? null : body });
-    },
-    responseCode: call("status_codes", {}),
-  };
-})();
-"#;
-
 impl Engine for JsEngine {
     fn run(&self, inv: &Invocation, host: SharedHost) -> Result<HandlerResponse, HandlerError> {
         let source = std::fs::read_to_string(inv.entry)
@@ -106,7 +42,7 @@ impl Engine for JsEngine {
             ctx.globals()
                 .set("__event_json", event_json)
                 .map_err(|e| guest(&ctx, e))?;
-            ctx.eval::<(), _>(PRELUDE).map_err(|e| guest(&ctx, e))?;
+            ctx.eval::<(), _>(crate::facade::js_prelude()).map_err(|e| guest(&ctx, e))?;
             ctx.eval::<(), _>(source.as_bytes()).map_err(|e| guest(&ctx, e))?;
             ctx.eval(
                 "JSON.stringify((function(){\
