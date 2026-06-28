@@ -84,7 +84,8 @@ store the UI reads) and defines the HTTP response. Bind a KV value in your HTML 
 Capabilities are **default-deny**: grant `kv`, `fs`, and `http_allow: ["host"]` only as needed.
 The unified `host` API (identical in js/lua/wasm) is in `component_help`: `host.kv.*`,
 `host.http.fetch`, `host.fs.*` (jailed), `host.log`, `host.response`/`host.responseCode`, and
-`host.crypto.*` (ungated — hash/hmac/aead/ed25519/random/encode; no capability needed).
+`host.crypto.*` (ungated — hash/hmac/aead/random/encode/hkdf/pbkdf2 + ed25519/ecdsa/rsa/x25519;
+no capability needed).
 Use handlers for data/side-effects (counters, fetches, caching); keep surface *layout* changes
 as `publish_surface`. WASM handlers pass the module bytes via `source_base64`.
 

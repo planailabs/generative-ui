@@ -182,6 +182,9 @@ fn assert_crypto(fx: &Fixture) {
     );
     assert_eq!(out.response.body["verified"], json!(true), "verifyHmac round-trip");
     assert_eq!(out.response.body["uuidlen"], json!(36), "uuid length");
+    // Public-key + ECDH facades round-trip through the engine.
+    assert_eq!(out.response.body["ecdsaOk"], json!(true), "ecdsa keypair+sign+verify");
+    assert_eq!(out.response.body["dhAgrees"], json!(true), "x25519 shared secret agrees");
 }
 
 /// An infinite loop is killed at the wall-clock deadline.
@@ -219,11 +222,17 @@ const JS_CRYPTO: Fixture = Fixture {
 function handle(e, h) {
   var msg = "The quick brown fox jumps over the lazy dog";
   var mac = h.crypto.hmac("sha256", "key", msg);
+  var ec = h.crypto.ecdsa.keypair("p256");
+  var sig = h.crypto.ecdsa.sign(ec.privateKey, "m", { curve: "p256" });
+  var a = h.crypto.x25519.keypair();
+  var b = h.crypto.x25519.keypair();
   return {
     sha256: h.crypto.hash("sha256", "abc"),
     hmac: mac,
     verified: h.crypto.verifyHmac("sha256", "key", msg, mac),
     uuidlen: h.crypto.uuid().length,
+    ecdsaOk: h.crypto.ecdsa.verify(ec.publicKey, "m", sig, { curve: "p256" }),
+    dhAgrees: h.crypto.x25519.deriveShared(a.privateKey, b.publicKey) === h.crypto.x25519.deriveShared(b.privateKey, a.publicKey),
   };
 }
 "#,
@@ -237,11 +246,17 @@ const LUA_CRYPTO: Fixture = Fixture {
 return function(e, h)
   local msg = "The quick brown fox jumps over the lazy dog"
   local mac = h.crypto.hmac("sha256", "key", msg)
+  local ec = h.crypto.ecdsa.keypair("p256")
+  local sig = h.crypto.ecdsa.sign(ec.privateKey, "m", { curve = "p256" })
+  local a = h.crypto.x25519.keypair()
+  local b = h.crypto.x25519.keypair()
   return {
     sha256 = h.crypto.hash("sha256", "abc"),
     hmac = mac,
     verified = h.crypto.verifyHmac("sha256", "key", msg, mac),
     uuidlen = #h.crypto.uuid(),
+    ecdsaOk = h.crypto.ecdsa.verify(ec.publicKey, "m", sig, { curve = "p256" }),
+    dhAgrees = h.crypto.x25519.deriveShared(a.privateKey, b.publicKey) == h.crypto.x25519.deriveShared(b.privateKey, a.publicKey),
   }
 end
 "#,

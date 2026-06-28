@@ -52,12 +52,26 @@ globalThis.host = (() => {
         verifyHmac: (algo, key, data, signature, opts) => c("verifyHmac", { algo: String(algo), key: String(key), data: String(data), signature: String(signature), ...(opts || {}) }),
         encode: (data, from, to) => c("encode", { data: String(data), from: from || "utf8", to: to || "hex" }),
         pbkdf2: (password, salt, opts) => c("pbkdf2", { password: String(password), salt: String(salt), ...(opts || {}) }),
+        hkdf: (params) => c("hkdf", params || {}),
         constantTimeEqual: (a, b, enc) => c("constantTimeEqual", { a: String(a), b: String(b), encoding: enc || "hex" }),
         aead: { seal: (params) => c("aead.seal", params || {}), open: (params) => c("aead.open", params || {}) },
         ed25519: {
           keypair: (enc) => c("ed25519.keypair", { encoding: enc || "hex" }),
           sign: (privateKey, data, opts) => c("ed25519.sign", { privateKey: String(privateKey), data: String(data), ...(opts || {}) }),
           verify: (publicKey, data, signature, opts) => c("ed25519.verify", { publicKey: String(publicKey), data: String(data), signature: String(signature), ...(opts || {}) }),
+        },
+        ecdsa: {
+          keypair: (curve, enc) => c("ecdsa.keypair", { curve: curve || "p256", encoding: enc || "hex" }),
+          sign: (privateKey, data, opts) => c("ecdsa.sign", { privateKey: String(privateKey), data: String(data), ...(opts || {}) }),
+          verify: (publicKey, data, signature, opts) => c("ecdsa.verify", { publicKey: String(publicKey), data: String(data), signature: String(signature), ...(opts || {}) }),
+        },
+        rsa: {
+          sign: (privateKey, data, opts) => c("rsa.sign", { privateKey: String(privateKey), data: String(data), ...(opts || {}) }),
+          verify: (publicKey, data, signature, opts) => c("rsa.verify", { publicKey: String(publicKey), data: String(data), signature: String(signature), ...(opts || {}) }),
+        },
+        x25519: {
+          keypair: (enc) => c("x25519.keypair", { encoding: enc || "hex" }),
+          deriveShared: (privateKey, publicKey, opts) => c("x25519.deriveShared", { privateKey: String(privateKey), publicKey: String(publicKey), ...(opts || {}) }),
         },
       };
     })(),

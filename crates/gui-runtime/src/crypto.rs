@@ -11,10 +11,11 @@ use std::num::NonZeroU32;
 use base64::engine::general_purpose::{STANDARD as B64, URL_SAFE as B64URL};
 use base64::Engine as _;
 use ring::rand::{SecureRandom, SystemRandom};
-use ring::signature::{self, Ed25519KeyPair, KeyPair, UnparsedPublicKey};
-use ring::{aead, digest, hmac, pbkdf2};
+use ring::signature::{self, EcdsaKeyPair, Ed25519KeyPair, KeyPair, RsaKeyPair, UnparsedPublicKey};
+use ring::{aead, digest, hkdf, hmac, pbkdf2};
 use serde_json::Value;
 use subtle::ConstantTimeEq;
+use x25519_dalek::{PublicKey as XPublicKey, StaticSecret};
 
 use crate::host::HostError;
 
@@ -35,11 +36,19 @@ pub fn dispatch(op: &str, args: &Value) -> Result<Value, HostError> {
         "crypto.encode" => encode_op(args),
         "crypto.constantTimeEqual" => ct_equal(args),
         "crypto.pbkdf2" => pbkdf2_op(args),
+        "crypto.hkdf" => hkdf_op(args),
         "crypto.aead.seal" => aead_seal(args),
         "crypto.aead.open" => aead_open(args),
         "crypto.ed25519.keypair" => ed25519_keypair(args),
         "crypto.ed25519.sign" => ed25519_sign(args),
         "crypto.ed25519.verify" => ed25519_verify(args),
+        "crypto.ecdsa.keypair" => ecdsa_keypair(args),
+        "crypto.ecdsa.sign" => ecdsa_sign(args),
+        "crypto.ecdsa.verify" => ecdsa_verify(args),
+        "crypto.rsa.sign" => rsa_sign(args),
+        "crypto.rsa.verify" => rsa_verify(args),
+        "crypto.x25519.keypair" => x25519_keypair(args),
+        "crypto.x25519.deriveShared" => x25519_derive(args),
         other => Err(HostError::Other(format!("unknown crypto op {other:?}"))),
     }
 }
@@ -200,6 +209,116 @@ fn ed25519_verify(args: &Value) -> Result<Value, HostError> {
     Ok(Value::Bool(ok))
 }
 
+/// HKDF (RFC 5869) extract-then-expand → `length` bytes of key material.
+fn hkdf_op(args: &Value) -> Result<Value, HostError> {
+    let algo = match opt_str(args, "algo").unwrap_or("sha256").to_ascii_lowercase().as_str() {
+        "sha256" => hkdf::HKDF_SHA256,
+        "sha384" => hkdf::HKDF_SHA384,
+        "sha512" => hkdf::HKDF_SHA512,
+        other => return Err(HostError::Other(format!("unknown hkdf algo {other:?}"))),
+    };
+    let len = args.get("length").and_then(|v| v.as_u64()).unwrap_or(32) as usize;
+    if len == 0 || len > MAX_PBKDF2_LEN {
+        return Err(HostError::Limit(format!("hkdf length must be 1..={MAX_PBKDF2_LEN}")));
+    }
+    let ikm = bytes_in(args, "ikm", "hex")?;
+    let salt = opt_bytes_in(args, "salt", "hex")?.unwrap_or_default();
+    let info = opt_bytes_in(args, "info", "utf8")?.unwrap_or_default();
+    let prk = hkdf::Salt::new(algo, &salt).extract(&ikm);
+    let info_parts: [&[u8]; 1] = [&info];
+    let okm = prk
+        .expand(&info_parts, HkdfLen(len))
+        .map_err(|_| HostError::Other("hkdf expand failed (length too large for hash)".into()))?;
+    let mut out = vec![0u8; len];
+    okm.fill(&mut out).map_err(|_| HostError::Other("hkdf fill failed".into()))?;
+    Ok(Value::String(encode(&out, out_enc(args))?))
+}
+
+/// Generate an ECDSA keypair: `{ privateKey (PKCS#8), publicKey (SEC1 point) }`. `curve` is
+/// `p256` (default) or `p384`; signatures are ASN.1/DER.
+fn ecdsa_keypair(args: &Value) -> Result<Value, HostError> {
+    let (signing, _) = ecdsa_algs(opt_str(args, "curve").unwrap_or("p256"))?;
+    let rng = SystemRandom::new();
+    let pkcs8 = EcdsaKeyPair::generate_pkcs8(signing, &rng)
+        .map_err(|_| HostError::Other("ecdsa keygen failed".into()))?;
+    let kp = EcdsaKeyPair::from_pkcs8(signing, pkcs8.as_ref(), &rng)
+        .map_err(|_| HostError::Other("ecdsa keygen parse failed".into()))?;
+    let enc = out_enc(args);
+    Ok(serde_json::json!({
+        "privateKey": encode(pkcs8.as_ref(), enc)?,
+        "publicKey": encode(kp.public_key().as_ref(), enc)?,
+    }))
+}
+
+fn ecdsa_sign(args: &Value) -> Result<Value, HostError> {
+    let (signing, _) = ecdsa_algs(opt_str(args, "curve").unwrap_or("p256"))?;
+    let pk = bytes_in(args, "privateKey", "hex")?;
+    let rng = SystemRandom::new();
+    let kp = EcdsaKeyPair::from_pkcs8(signing, &pk, &rng)
+        .map_err(|_| HostError::Other("ecdsa: invalid PKCS#8 private key".into()))?;
+    let data = bytes_in(args, "data", "utf8")?;
+    let sig = kp.sign(&rng, &data).map_err(|_| HostError::Other("ecdsa sign failed".into()))?;
+    Ok(Value::String(encode(sig.as_ref(), out_enc(args))?))
+}
+
+fn ecdsa_verify(args: &Value) -> Result<Value, HostError> {
+    let (_, verify) = ecdsa_algs(opt_str(args, "curve").unwrap_or("p256"))?;
+    let pubkey = bytes_in(args, "publicKey", "hex")?;
+    let data = bytes_in(args, "data", "utf8")?;
+    let sig = bytes_in(args, "signature", "hex")?;
+    let ok = UnparsedPublicKey::new(verify, &pubkey).verify(&data, &sig).is_ok();
+    Ok(Value::Bool(ok))
+}
+
+/// RSA sign with a PKCS#8 private key. `scheme` selects padding+hash, e.g. `pkcs1-sha256`
+/// (default) or `pss-sha512`. ring cannot *generate* RSA keys — supply one made elsewhere.
+fn rsa_sign(args: &Value) -> Result<Value, HostError> {
+    let padding = rsa_sign_scheme(opt_str(args, "scheme").unwrap_or("pkcs1-sha256"))?;
+    let pk = bytes_in(args, "privateKey", "hex")?;
+    let kp = RsaKeyPair::from_pkcs8(&pk)
+        .map_err(|_| HostError::Other("rsa: invalid PKCS#8 private key".into()))?;
+    let data = bytes_in(args, "data", "utf8")?;
+    let mut sig = vec![0u8; kp.public().modulus_len()];
+    kp.sign(padding, &SystemRandom::new(), &data, &mut sig)
+        .map_err(|_| HostError::Other("rsa sign failed".into()))?;
+    Ok(Value::String(encode(&sig, out_enc(args))?))
+}
+
+/// RSA verify. `publicKey` is the DER-encoded RSAPublicKey (PKCS#1). `scheme` as in [`rsa_sign`].
+fn rsa_verify(args: &Value) -> Result<Value, HostError> {
+    let alg = rsa_verify_scheme(opt_str(args, "scheme").unwrap_or("pkcs1-sha256"))?;
+    let pubkey = bytes_in(args, "publicKey", "hex")?;
+    let data = bytes_in(args, "data", "utf8")?;
+    let sig = bytes_in(args, "signature", "hex")?;
+    let ok = UnparsedPublicKey::new(alg, &pubkey).verify(&data, &sig).is_ok();
+    Ok(Value::Bool(ok))
+}
+
+/// Generate an X25519 keypair (32-byte scalar + 32-byte public point).
+fn x25519_keypair(args: &Value) -> Result<Value, HostError> {
+    let mut sk = [0u8; 32];
+    fill(&mut sk)?;
+    let secret = StaticSecret::from(sk);
+    let public = XPublicKey::from(&secret);
+    let enc = out_enc(args);
+    Ok(serde_json::json!({
+        "privateKey": encode(&secret.to_bytes(), enc)?,
+        "publicKey": encode(public.as_bytes(), enc)?,
+    }))
+}
+
+/// X25519 ECDH: shared secret from our `privateKey` and the peer's `publicKey`.
+fn x25519_derive(args: &Value) -> Result<Value, HostError> {
+    let sk = arr32(bytes_in(args, "privateKey", "hex")?, "x25519 private key")?;
+    let pk = arr32(bytes_in(args, "publicKey", "hex")?, "x25519 public key")?;
+    let shared = StaticSecret::from(sk).diffie_hellman(&XPublicKey::from(pk));
+    Ok(Value::String(encode(shared.as_bytes(), out_enc(args))?))
+}
+
+fn arr32(v: Vec<u8>, what: &str) -> Result<[u8; 32], HostError> {
+    v.try_into().map_err(|_| HostError::Other(format!("{what} must be 32 bytes")))
+}
+
 // --- algorithm tables ----------------------------------------------------
 
 fn digest_algo(name: &str) -> Result<&'static digest::Algorithm, HostError> {
@@ -236,6 +355,53 @@ fn aead_key(args: &Value) -> Result<aead::LessSafeKey, HostError> {
     let unbound = aead::UnboundKey::new(alg, &key)
         .map_err(|_| HostError::Other(format!("aead: key must be {} bytes", alg.key_len())))?;
     Ok(aead::LessSafeKey::new(unbound))
+}
+
+fn ecdsa_algs(
+    curve: &str,
+) -> Result<(&'static signature::EcdsaSigningAlgorithm, &'static signature::EcdsaVerificationAlgorithm), HostError> {
+    Ok(match curve.to_ascii_lowercase().as_str() {
+        "p256" | "p-256" | "secp256r1" => {
+            (&signature::ECDSA_P256_SHA256_ASN1_SIGNING, &signature::ECDSA_P256_SHA256_ASN1)
+        }
+        "p384" | "p-384" | "secp384r1" => {
+            (&signature::ECDSA_P384_SHA384_ASN1_SIGNING, &signature::ECDSA_P384_SHA384_ASN1)
+        }
+        other => return Err(HostError::Other(format!("unknown ecdsa curve {other:?}"))),
+    })
+}
+
+fn rsa_sign_scheme(scheme: &str) -> Result<&'static dyn signature::RsaEncoding, HostError> {
+    Ok(match scheme.to_ascii_lowercase().as_str() {
+        "pkcs1-sha256" => &signature::RSA_PKCS1_SHA256,
+        "pkcs1-sha384" => &signature::RSA_PKCS1_SHA384,
+        "pkcs1-sha512" => &signature::RSA_PKCS1_SHA512,
+        "pss-sha256" => &signature::RSA_PSS_SHA256,
+        "pss-sha384" => &signature::RSA_PSS_SHA384,
+        "pss-sha512" => &signature::RSA_PSS_SHA512,
+        other => return Err(HostError::Other(format!("unknown rsa scheme {other:?}"))),
+    })
+}
+
+fn rsa_verify_scheme(scheme: &str) -> Result<&'static dyn signature::VerificationAlgorithm, HostError> {
+    Ok(match scheme.to_ascii_lowercase().as_str() {
+        "pkcs1-sha256" => &signature::RSA_PKCS1_2048_8192_SHA256,
+        "pkcs1-sha384" => &signature::RSA_PKCS1_2048_8192_SHA384,
+        "pkcs1-sha512" => &signature::RSA_PKCS1_2048_8192_SHA512,
+        "pss-sha256" => &signature::RSA_PSS_2048_8192_SHA256,
+        "pss-sha384" => &signature::RSA_PSS_2048_8192_SHA384,
+        "pss-sha512" => &signature::RSA_PSS_2048_8192_SHA512,
+        other => return Err(HostError::Other(format!("unknown rsa scheme {other:?}"))),
+    })
+}
+
+/// Output-length newtype for `hkdf::Prk::expand` (ring keys expansion by a `KeyType`).
+#[derive(Clone, Copy)]
+struct HkdfLen(usize);
+impl hkdf::KeyType for HkdfLen {
+    fn len(&self) -> usize {
+        self.0
+    }
 }
 
 fn nonce_from(bytes: &[u8]) -> Result<aead::Nonce, HostError> {
@@ -424,6 +590,65 @@ mod tests {
         assert!(matches!(
             dispatch("crypto.pbkdf2", &json!({ "password": "p", "salt": "ab", "iterations": 0 })),
             Err(HostError::Limit(_))
+        ));
+    }
+
+    #[test]
+    fn hkdf_known_answer() {
+        // RFC 5869 Test Case 1 (SHA-256).
+        let okm = d(
+            "crypto.hkdf",
+            json!({
+                "algo": "sha256",
+                "ikm": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+                "salt": "000102030405060708090a0b0c",
+                "info": "f0f1f2f3f4f5f6f7f8f9",
+                "infoEncoding": "hex",
+                "length": 42
+            }),
+        );
+        assert_eq!(
+            okm,
+            json!("3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865")
+        );
+    }
+
+    #[test]
+    fn ecdsa_sign_verify() {
+        for curve in ["p256", "p384"] {
+            let kp = d("crypto.ecdsa.keypair", json!({ "curve": curve }));
+            let (priv_k, pub_k) = (&kp["privateKey"], &kp["publicKey"]);
+            let sig = d("crypto.ecdsa.sign", json!({ "curve": curve, "privateKey": priv_k, "data": "msg" }));
+            assert_eq!(
+                d("crypto.ecdsa.verify", json!({ "curve": curve, "publicKey": pub_k, "data": "msg", "signature": sig })),
+                json!(true),
+                "{curve} round-trip"
+            );
+            assert_eq!(
+                d("crypto.ecdsa.verify", json!({ "curve": curve, "publicKey": pub_k, "data": "x", "signature": sig })),
+                json!(false),
+                "{curve} tamper"
+            );
+        }
+    }
+
+    #[test]
+    fn x25519_shared_secret_agrees() {
+        let a = d("crypto.x25519.keypair", json!({}));
+        let b = d("crypto.x25519.keypair", json!({}));
+        let ab = d("crypto.x25519.deriveShared", json!({ "privateKey": a["privateKey"], "publicKey": b["publicKey"] }));
+        let ba = d("crypto.x25519.deriveShared", json!({ "privateKey": b["privateKey"], "publicKey": a["publicKey"] }));
+        assert_eq!(ab, ba, "both sides derive the same secret");
+        assert_eq!(ab.as_str().unwrap().len(), 64, "32-byte shared secret");
+    }
+
+    #[test]
+    fn rsa_unknown_scheme_errors() {
+        // Full RSA sign/verify needs a real PKCS#8 key (ring can't generate one); the algorithm
+        // table is the bit worth unit-testing here.
+        assert!(matches!(
+            dispatch("crypto.rsa.verify", &json!({ "scheme": "bogus", "publicKey": "00", "data": "x", "signature": "00" })),
+            Err(HostError::Other(_))
         ));
     }
 

@@ -28,6 +28,9 @@ http = "1"
 ring = "0.17"
 base64 = "0.22"
 subtle = "2"
+# X25519 ECDH: ring's `agreement` is ephemeral-only (private keys can't be imported from bytes),
+# so a stateless derive-from-stored-key needs dalek.
+x25519-dalek = { version = "2", features = ["static_secrets"] }
 rquickjs = { version = "0.9", optional = true }
 mlua = { version = "0.10", features = ["luau", "vendored", "serialize"], optional = true }
 wasmtime = { version = "45", optional = true }

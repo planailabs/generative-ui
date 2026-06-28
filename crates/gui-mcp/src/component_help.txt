@@ -53,9 +53,14 @@ Unified host API:
     .hash(algo, data[, opts]) / .hmac(algo, key, data[, opts]) -> hex   (sha256/384/512/sha1)
     .verifyHmac(algo, key, data, sig[, opts]) -> bool    -- constant-time; webhook signatures
     .randomBytes(n[, enc]) / .uuid()    .encode(data, from, to)   (utf8|hex|base64|base64url)
-    .pbkdf2(password, salt, {iterations, length, algo})   .constantTimeEqual(a, b[, enc])
+    .pbkdf2(password, salt, {iterations, length, algo})   .hkdf({ikm, salt?, info?, length, algo})
+    .constantTimeEqual(a, b[, enc])
     .aead.seal/open({algo, key, nonce?, plaintext|ciphertext, aad?})   (chacha20poly1305/aes-gcm)
     .ed25519.keypair() / .sign(privKey, data) / .verify(pubKey, data, sig)
+    .ecdsa.keypair(curve) / .sign / .verify  (curve p256|p384, ASN.1 DER sigs)
+    .x25519.keypair() / .deriveShared(privKey, peerPubKey)   (ECDH shared secret)
+    .rsa.sign(pkcs8PrivKey, data, {scheme}) / .verify(derPubKey, data, sig, {scheme})
+       (scheme pkcs1-sha256 default | pss-sha512 etc.; bring your own key — ring has no RSA keygen)
     -- bytes cross as strings; opts override per-field/output encoding (<field>Encoding, encoding)
 
 Public vs private: `host.kv`/`host.emit` are visible to the browser (kv.json / events API) and

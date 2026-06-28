@@ -46,6 +46,7 @@ return {
     verifyHmac = function(algo, key, data, signature, opts) return call("crypto.verifyHmac", merge({ algo = tostring(algo), key = tostring(key), data = tostring(data), signature = tostring(signature) }, opts)) end,
     encode = function(data, from, to) return call("crypto.encode", { data = tostring(data), from = from or "utf8", to = to or "hex" }) end,
     pbkdf2 = function(password, salt, opts) return call("crypto.pbkdf2", merge({ password = tostring(password), salt = tostring(salt) }, opts)) end,
+    hkdf = function(params) return call("crypto.hkdf", params or {}) end,
     constantTimeEqual = function(a, b, enc) return call("crypto.constantTimeEqual", { a = tostring(a), b = tostring(b), encoding = enc or "hex" }) end,
     aead = {
       seal = function(params) return call("crypto.aead.seal", params or {}) end,
@@ -55,6 +56,19 @@ return {
       keypair = function(enc) return call("crypto.ed25519.keypair", { encoding = enc or "hex" }) end,
       sign = function(privateKey, data, opts) return call("crypto.ed25519.sign", merge({ privateKey = tostring(privateKey), data = tostring(data) }, opts)) end,
       verify = function(publicKey, data, signature, opts) return call("crypto.ed25519.verify", merge({ publicKey = tostring(publicKey), data = tostring(data), signature = tostring(signature) }, opts)) end,
+    },
+    ecdsa = {
+      keypair = function(curve, enc) return call("crypto.ecdsa.keypair", { curve = curve or "p256", encoding = enc or "hex" }) end,
+      sign = function(privateKey, data, opts) return call("crypto.ecdsa.sign", merge({ privateKey = tostring(privateKey), data = tostring(data) }, opts)) end,
+      verify = function(publicKey, data, signature, opts) return call("crypto.ecdsa.verify", merge({ publicKey = tostring(publicKey), data = tostring(data), signature = tostring(signature) }, opts)) end,
+    },
+    rsa = {
+      sign = function(privateKey, data, opts) return call("crypto.rsa.sign", merge({ privateKey = tostring(privateKey), data = tostring(data) }, opts)) end,
+      verify = function(publicKey, data, signature, opts) return call("crypto.rsa.verify", merge({ publicKey = tostring(publicKey), data = tostring(data), signature = tostring(signature) }, opts)) end,
+    },
+    x25519 = {
+      keypair = function(enc) return call("crypto.x25519.keypair", { encoding = enc or "hex" }) end,
+      deriveShared = function(privateKey, publicKey, opts) return call("crypto.x25519.deriveShared", merge({ privateKey = tostring(privateKey), publicKey = tostring(publicKey) }, opts)) end,
     },
   },
   kv = kv("public"),
