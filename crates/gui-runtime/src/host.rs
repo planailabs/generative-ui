@@ -225,6 +225,8 @@ impl Host {
                 Ok(Value::Null)
             }
             "status_codes" => Ok(Value::Object(status_codes())),
+            // Crypto is pure compute (no I/O, no ambient authority) → ungated, always available.
+            _ if op.starts_with("crypto.") => crate::crypto::dispatch(op, args),
             other => Err(HostError::Other(format!("unknown host op {other:?}"))),
         }
     }

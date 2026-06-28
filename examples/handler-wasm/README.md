@@ -8,6 +8,10 @@ It mirrors the JS/Lua example handlers and exercises the full `host` API, routin
 backflow `event.action` (`bump`, `go`, `respond`). See `src/lib.rs` and the ABI docs in
 `gui-runtime`'s `wasm` module.
 
+The ungated `crypto.*` ops (`crypto.hash`, `crypto.hmac`, `crypto.aead.*`, `crypto.ed25519.*`,
+…) are reachable through the same single `host_call(op, args_json)` import — no extra capability
+and no new ABI; a guest just calls `host_call("crypto.hmac", "{...}")` like any other op.
+
 ## Rebuild
 
 This crate is excluded from the host workspace (it only builds for wasm). Build it and copy

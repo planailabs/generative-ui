@@ -165,6 +165,25 @@ fn assert_emit_and_private(fx: &Fixture) {
     assert!(!out.public.changed, "public untouched");
 }
 
+/// The ungated `crypto.*` surface works through the engine (no capability required): known-answer
+/// hash + hmac, a self-verified signature, and a well-formed uuid.
+fn assert_crypto(fx: &Fixture) {
+    let ev = event("go", json!(null));
+    let out = run(fx, Capabilities::default(), Limits::default(), &ev, Map::new()).expect("crypto ok");
+    assert_eq!(
+        out.response.body["sha256"],
+        json!("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
+        "SHA-256(\"abc\")"
+    );
+    assert_eq!(
+        out.response.body["hmac"],
+        json!("f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8"),
+        "HMAC-SHA256 test vector"
+    );
+    assert_eq!(out.response.body["verified"], json!(true), "verifyHmac round-trip");
+    assert_eq!(out.response.body["uuidlen"], json!(36), "uuid length");
+}
+
 /// An infinite loop is killed at the wall-clock deadline.
 fn assert_wall_clock_abort(fx: &Fixture) {
     let limits = Limits { wall_ms: 200, ..Default::default() };
@@ -188,6 +207,42 @@ return function(event, host)
   local r = host.http.fetch({ url = event.value.url })
   host.log("info", "done")
   return { hits = host.kv.get("hits"), note = note, status = r.status, bodylen = #r.body }
+end
+"#,
+};
+
+#[cfg(feature = "js")]
+const JS_CRYPTO: Fixture = Fixture {
+    lang: HandlerLang::Js,
+    entry: "main.js",
+    source: br#"
+function handle(e, h) {
+  var msg = "The quick brown fox jumps over the lazy dog";
+  var mac = h.crypto.hmac("sha256", "key", msg);
+  return {
+    sha256: h.crypto.hash("sha256", "abc"),
+    hmac: mac,
+    verified: h.crypto.verifyHmac("sha256", "key", msg, mac),
+    uuidlen: h.crypto.uuid().length,
+  };
+}
+"#,
+};
+
+#[cfg(feature = "lua")]
+const LUA_CRYPTO: Fixture = Fixture {
+    lang: HandlerLang::Lua,
+    entry: "main.lua",
+    source: br#"
+return function(e, h)
+  local msg = "The quick brown fox jumps over the lazy dog"
+  local mac = h.crypto.hmac("sha256", "key", msg)
+  return {
+    sha256 = h.crypto.hash("sha256", "abc"),
+    hmac = mac,
+    verified = h.crypto.verifyHmac("sha256", "key", msg, mac),
+    uuidlen = #h.crypto.uuid(),
+  }
 end
 "#,
 };
@@ -240,6 +295,11 @@ mod js {
     }
 
     #[test]
+    fn crypto() {
+        assert_crypto(&JS_CRYPTO);
+    }
+
+    #[test]
     fn wall_clock_abort() {
         assert_wall_clock_abort(&JS_LOOP);
     }
@@ -284,6 +344,11 @@ mod lua {
     #[test]
     fn fold_accumulates() {
         assert_fold_accumulates(&LUA_COUNTER);
+    }
+
+    #[test]
+    fn crypto() {
+        assert_crypto(&LUA_CRYPTO);
     }
 
     #[test]

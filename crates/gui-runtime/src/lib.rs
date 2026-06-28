@@ -6,6 +6,7 @@
 //! surface — they fold the backflow log into the surface's KV view and define the HTTP
 //! response returned to the browser.
 
+mod crypto;
 mod engine;
 mod host;
 

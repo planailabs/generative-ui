@@ -25,6 +25,9 @@ tracing = { workspace = true }
 ureq = "2"
 url = "2"
 http = "1"
+ring = "0.17"
+base64 = "0.22"
+subtle = "2"
 rquickjs = { version = "0.9", optional = true }
 mlua = { version = "0.10", features = ["luau", "vendored", "serialize"], optional = true }
 wasmtime = { version = "45", optional = true }

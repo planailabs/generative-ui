@@ -33,7 +33,30 @@ local function kv(scope)
     all = function() return call("kv.all", { scope = scope }) end,
   }
 end
+local function merge(base, extra)
+  if extra then for k, v in pairs(extra) do base[k] = v end end
+  return base
+end
 return {
+  crypto = {
+    randomBytes = function(n, enc) return call("crypto.randomBytes", { bytes = n, encoding = enc or "hex" }) end,
+    uuid = function() return call("crypto.uuid", {}) end,
+    hash = function(algo, data, opts) return call("crypto.hash", merge({ algo = tostring(algo), data = tostring(data) }, opts)) end,
+    hmac = function(algo, key, data, opts) return call("crypto.hmac", merge({ algo = tostring(algo), key = tostring(key), data = tostring(data) }, opts)) end,
+    verifyHmac = function(algo, key, data, signature, opts) return call("crypto.verifyHmac", merge({ algo = tostring(algo), key = tostring(key), data = tostring(data), signature = tostring(signature) }, opts)) end,
+    encode = function(data, from, to) return call("crypto.encode", { data = tostring(data), from = from or "utf8", to = to or "hex" }) end,
+    pbkdf2 = function(password, salt, opts) return call("crypto.pbkdf2", merge({ password = tostring(password), salt = tostring(salt) }, opts)) end,
+    constantTimeEqual = function(a, b, enc) return call("crypto.constantTimeEqual", { a = tostring(a), b = tostring(b), encoding = enc or "hex" }) end,
+    aead = {
+      seal = function(params) return call("crypto.aead.seal", params or {}) end,
+      open = function(params) return call("crypto.aead.open", params or {}) end,
+    },
+    ed25519 = {
+      keypair = function(enc) return call("crypto.ed25519.keypair", { encoding = enc or "hex" }) end,
+      sign = function(privateKey, data, opts) return call("crypto.ed25519.sign", merge({ privateKey = tostring(privateKey), data = tostring(data) }, opts)) end,
+      verify = function(publicKey, data, signature, opts) return call("crypto.ed25519.verify", merge({ publicKey = tostring(publicKey), data = tostring(data), signature = tostring(signature) }, opts)) end,
+    },
+  },
   kv = kv("public"),
   kvPrivate = kv("private"),
   http = { fetch = function(req) return call("http.fetch", { request = req }) end },

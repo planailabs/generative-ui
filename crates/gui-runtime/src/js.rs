@@ -42,6 +42,25 @@ globalThis.host = (() => {
       write: (p, d) => call("fs.write", { path: String(p), data: String(d) }),
       list: (p) => call("fs.list", { prefix: String(p || "") }),
     },
+    crypto: (() => {
+      const c = (op, args) => call("crypto." + op, args);
+      return {
+        randomBytes: (n, enc) => c("randomBytes", { bytes: n | 0, encoding: enc || "hex" }),
+        uuid: () => c("uuid", {}),
+        hash: (algo, data, opts) => c("hash", { algo: String(algo), data: String(data), ...(opts || {}) }),
+        hmac: (algo, key, data, opts) => c("hmac", { algo: String(algo), key: String(key), data: String(data), ...(opts || {}) }),
+        verifyHmac: (algo, key, data, signature, opts) => c("verifyHmac", { algo: String(algo), key: String(key), data: String(data), signature: String(signature), ...(opts || {}) }),
+        encode: (data, from, to) => c("encode", { data: String(data), from: from || "utf8", to: to || "hex" }),
+        pbkdf2: (password, salt, opts) => c("pbkdf2", { password: String(password), salt: String(salt), ...(opts || {}) }),
+        constantTimeEqual: (a, b, enc) => c("constantTimeEqual", { a: String(a), b: String(b), encoding: enc || "hex" }),
+        aead: { seal: (params) => c("aead.seal", params || {}), open: (params) => c("aead.open", params || {}) },
+        ed25519: {
+          keypair: (enc) => c("ed25519.keypair", { encoding: enc || "hex" }),
+          sign: (privateKey, data, opts) => c("ed25519.sign", { privateKey: String(privateKey), data: String(data), ...(opts || {}) }),
+          verify: (publicKey, data, signature, opts) => c("ed25519.verify", { publicKey: String(publicKey), data: String(data), signature: String(signature), ...(opts || {}) }),
+        },
+      };
+    })(),
     log: (level, msg) => call("log", { level: String(level), message: String(msg) }),
     emit: (name, data) => call("emit", { scope: "public", name: String(name), data: data === undefined ? null : data }),
     emitPrivate: (name, data) => call("emit", { scope: "private", name: String(name), data: data === undefined ? null : data }),
