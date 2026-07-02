@@ -5,7 +5,8 @@ use std::time::Duration;
 
 use gui_agent::Workspace;
 use gui_mcp::{
-    DefineDeckParams, GuiServer, ListBackflowParams, PublishParams, ReadSurfaceParams, WaitParams,
+    DefineDeckParams, DeleteBackflowParams, DrainBackflowParams, GuiServer, ListBackflowParams,
+    PublishParams, ReadSurfaceParams, WaitParams,
 };
 use rmcp::handler::server::wrapper::Parameters;
 
@@ -128,6 +129,84 @@ async fn wait_for_backflow_returns_a_written_event() {
         .await
         .unwrap();
     assert!(result_text(&listed).contains("refresh"));
+}
+
+#[tokio::test]
+async fn delete_and_drain_backflow_remove_event_files() {
+    let (tmp, srv) = server();
+    let path = gui_schema::SurfacePath::new("demo", "main", "sales").unwrap();
+    let events_dir = path.events_dir(tmp.path());
+    for (ms, action) in [(100u64, "refresh"), (200, "save"), (300, "refresh")] {
+        let ev = serde_json::json!({
+            "schema_version": "generative-ui/event.v1",
+            "action": action,
+            "surface": "demo/main/sales",
+            "received_at": "t"
+        });
+        gui_schema::atomic_write(
+            &events_dir.join(format!("{ms}-{action}.json")),
+            ev.to_string().as_bytes(),
+        )
+        .unwrap();
+    }
+
+    // No filter → error, drain_backflow is the explicit delete-all.
+    srv.delete_backflow(Parameters(DeleteBackflowParams {
+        agent: "demo".into(),
+        deck: None,
+        surface: "sales".into(),
+        file: None,
+        action: None,
+        since: None,
+        until: None,
+    }))
+    .await
+    .expect_err("empty filter must be rejected");
+
+    // Delete by exact action.
+    let deleted = srv
+        .delete_backflow(Parameters(DeleteBackflowParams {
+            agent: "demo".into(),
+            deck: None,
+            surface: "sales".into(),
+            file: None,
+            action: Some("refresh".into()),
+            since: None,
+            until: None,
+        }))
+        .await
+        .unwrap();
+    let text = result_text(&deleted);
+    assert!(text.contains("100-refresh.json") && text.contains("300-refresh.json"), "got: {text}");
+    assert!(!text.contains("200-save.json"), "got: {text}");
+    assert!(events_dir.join("200-save.json").exists());
+
+    // Delete by file id.
+    srv.delete_backflow(Parameters(DeleteBackflowParams {
+        agent: "demo".into(),
+        deck: None,
+        surface: "sales".into(),
+        file: Some("200-save.json".into()),
+        action: None,
+        since: None,
+        until: None,
+    }))
+    .await
+    .unwrap();
+    assert!(!events_dir.join("200-save.json").exists());
+
+    // Drain removes whatever is left (including files list_backflow would skip).
+    gui_schema::atomic_write(&events_dir.join("400-junk.json"), b"not json").unwrap();
+    let drained = srv
+        .drain_backflow(Parameters(DrainBackflowParams {
+            agent: "demo".into(),
+            deck: None,
+            surface: "sales".into(),
+        }))
+        .await
+        .unwrap();
+    assert!(result_text(&drained).contains("400-junk.json"));
+    assert_eq!(std::fs::read_dir(&events_dir).unwrap().count(), 0);
 }
 
 #[tokio::test]

@@ -92,6 +92,9 @@ as `publish_surface`. WASM handlers pass the module bytes via `source_base64`.
 **Events & visibility.** A handler calls `host.emit(name, data)` to record an event you pick up
 with `wait_for_backflow`/`list_backflow` — the same stream a direct UI submission produces (a
 button/form's `data-action` is the event name, its fields the data), so handlers are optional.
+Once processed, clean up: `drain_backflow` deletes a surface's whole event log;
+`delete_backflow` deletes selectively by `file` (the id from `list_backflow`), exact `action`,
+or a `since`/`until` millis range.
 Public (`host.kv`/`host.emit`) is visible to the browser (bound via `data-kv`, served on the
 events/kv APIs); private (`host.kvPrivate`/`host.emitPrivate`) is agent-only. You always see both.
 

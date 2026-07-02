@@ -8,7 +8,7 @@
 use std::time::Duration;
 
 use base64::Engine as _;
-use gui_agent::{Capabilities, HandlerLang, Limits, SurfaceBuilder, Workspace};
+use gui_agent::{BackflowFilter, Capabilities, HandlerLang, Limits, SurfaceBuilder, Workspace};
 use gui_schema::{DeckManifest, SurfacePath, DEFAULT_DECK};
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -133,6 +133,28 @@ pub struct ListBackflowParams {
     pub deck: Option<String>,
     pub surface: String,
     pub since: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct DrainBackflowParams {
+    pub agent: String,
+    pub deck: Option<String>,
+    pub surface: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct DeleteBackflowParams {
+    pub agent: String,
+    pub deck: Option<String>,
+    pub surface: String,
+    /// Exact event file name (the `file` id from `list_backflow`/`wait_for_backflow`).
+    pub file: Option<String>,
+    /// Delete events with this exact action.
+    pub action: Option<String>,
+    /// Only delete events with `millis > since`.
+    pub since: Option<u64>,
+    /// Only delete events with `millis <= until`.
+    pub until: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -279,8 +301,54 @@ impl GuiServer {
             .workspace
             .read_backflow(&path, p.since)
             .map_err(|e| internal(e.to_string()))?;
-        let events: Vec<_> = events.into_iter().map(|be| be.event).collect();
+        let events: Vec<_> = events
+            .into_iter()
+            .map(|be| serde_json::json!({ "file": be.file, "millis": be.millis, "event": be.event }))
+            .collect();
         ok_json(serde_json::json!({ "surface": path.id(), "events": events }))
+    }
+
+    #[tool(
+        description = "Drain a surface's backflow: delete ALL recorded events. Returns the deleted file names."
+    )]
+    pub async fn drain_backflow(
+        &self,
+        Parameters(p): Parameters<DrainBackflowParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let path = surface_path(&p.agent, &p.deck, &p.surface)?;
+        tracing::info!(surface = %path.id(), "tool: drain_backflow");
+        let deleted = self
+            .workspace
+            .delete_backflow(&path, &BackflowFilter::default())
+            .map_err(|e| internal(e.to_string()))?;
+        ok_json(serde_json::json!({ "surface": path.id(), "deleted": deleted }))
+    }
+
+    #[tool(
+        description = "Delete specific backflow events for a surface, selected by `file` (the id from list_backflow/wait_for_backflow), exact `action`, and/or a `since`/`until` millis range. All given filters must match; at least one is required (use drain_backflow to delete everything). Returns the deleted file names."
+    )]
+    pub async fn delete_backflow(
+        &self,
+        Parameters(p): Parameters<DeleteBackflowParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let path = surface_path(&p.agent, &p.deck, &p.surface)?;
+        let filter = BackflowFilter {
+            file: p.file,
+            action: p.action,
+            since: p.since,
+            until: p.until,
+        };
+        if filter.is_empty() {
+            return Err(invalid(
+                "delete_backflow needs at least one filter (file, action, since, until); use drain_backflow to delete all events",
+            ));
+        }
+        tracing::info!(surface = %path.id(), ?filter, "tool: delete_backflow");
+        let deleted = self
+            .workspace
+            .delete_backflow(&path, &filter)
+            .map_err(|e| internal(e.to_string()))?;
+        ok_json(serde_json::json!({ "surface": path.id(), "deleted": deleted }))
     }
 
     #[tool(description = "List all discovered agents, decks, and surfaces (live versions).")]
