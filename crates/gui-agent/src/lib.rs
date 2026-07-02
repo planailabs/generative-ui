@@ -198,6 +198,26 @@ pub struct BackflowEvent {
     pub event: Event,
 }
 
+/// Which backflow events [`Workspace::delete_backflow`] removes. All set fields must match;
+/// the default (empty) filter matches everything, i.e. drains the surface.
+#[derive(Clone, Debug, Default)]
+pub struct BackflowFilter {
+    /// Exact event file name — the id returned by `read_backflow`/`wait_for_backflow`.
+    pub file: Option<String>,
+    /// Exact event action.
+    pub action: Option<String>,
+    /// Only events with `millis > since`.
+    pub since: Option<u64>,
+    /// Only events with `millis <= until`.
+    pub until: Option<u64>,
+}
+
+impl BackflowFilter {
+    pub fn is_empty(&self) -> bool {
+        self.file.is_none() && self.action.is_none() && self.since.is_none() && self.until.is_none()
+    }
+}
+
 /// Default number of surface versions kept after a publish (older ones are GC'd).
 pub const DEFAULT_KEEP_VERSIONS: usize = 3;
 
@@ -259,8 +279,15 @@ impl Workspace {
     /// Publish a new version of a surface (latest-wins). Returns the minted [`Version`].
     pub fn publish(&self, path: &SurfacePath, builder: &SurfaceBuilder) -> Result<Version> {
         let (ms, iso) = now();
-        // Avoid colliding with an existing version dir on rapid publishes.
+        // Mint strictly above the live version: on rapid publishes GC can prune the dir that
+        // collision-bumped an earlier mint past `now()`, and reusing the freed id would make
+        // the new publish sort *older* than live (latest-wins would serve stale content).
         let mut version = Version(ms);
+        if let Some(live) = self.live_version(path)
+            && live.0 >= version.0 {
+                version = Version(live.0 + 1);
+            }
+        // Avoid colliding with any existing version dir (e.g. partial ones without frame.json).
         while path.version_dir(&self.root, version).exists() {
             version = Version(version.0 + 1);
         }
@@ -378,6 +405,56 @@ impl Workspace {
         }
         out.sort_by(|a, b| a.millis.cmp(&b.millis).then_with(|| a.file.cmp(&b.file)));
         Ok(out)
+    }
+
+    /// Delete backflow events matching `filter`; an empty filter drains the surface (deletes
+    /// every event, including corrupt files `read_backflow` would skip). Returns the deleted
+    /// file names, sorted.
+    pub fn delete_backflow(&self, path: &SurfacePath, filter: &BackflowFilter) -> Result<Vec<String>> {
+        let dir = path.events_dir(&self.root);
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => return Err(e).context("read events dir"),
+        };
+        let mut deleted = Vec::new();
+        for entry in entries.filter_map(|e| e.ok()) {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') || !name.ends_with(".json") {
+                continue;
+            }
+            let millis = match name.split('-').next().and_then(|s| s.parse::<u64>().ok()) {
+                Some(m) => m,
+                None => continue,
+            };
+            if let Some(f) = &filter.file
+                && *f != name {
+                    continue;
+                }
+            if let Some(s) = filter.since
+                && millis <= s {
+                    continue;
+                }
+            if let Some(u) = filter.until
+                && millis > u {
+                    continue;
+                }
+            if let Some(a) = &filter.action {
+                // Match on the parsed event's exact action (filenames are lossily slugified).
+                let action = std::fs::read(entry.path())
+                    .ok()
+                    .and_then(|b| serde_json::from_slice::<Event>(&b).ok())
+                    .map(|ev| ev.action);
+                if action.as_deref() != Some(a.as_str()) {
+                    continue;
+                }
+            }
+            std::fs::remove_file(entry.path())
+                .with_context(|| format!("delete event {name}"))?;
+            deleted.push(name);
+        }
+        deleted.sort();
+        Ok(deleted)
     }
 
     /// Block until a backflow event newer than `since` arrives (or `timeout` elapses).
