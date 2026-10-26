@@ -84,7 +84,7 @@ loads the [`authoring-ui`](.agents/skills/authoring-ui/SKILL.md) skill as its sy
 and **builds the app itself** by calling the MCP tools (`publish_surface`, `define_deck`, …).
 
 ```sh
-cargo run -p direct-access -- --artifacts ./run --mock        # deterministic, offline
+cargo run -p direct-access -- --artifacts ./run --mock        # deterministic, offline; keeps serving until Ctrl-C
 # open http://127.0.0.1:8080/  — the surfaces the agent publishes appear live
 
 # Real / OpenAI-compatible backend (opt-in; custom base URL supported):

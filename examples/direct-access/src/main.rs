@@ -60,25 +60,29 @@ async fn main() -> Result<()> {
     // Serve the UI so the agent's published surfaces are viewable live.
     let state = AppState::new(cli.artifacts.clone());
     let addr = cli.addr.clone();
-    tokio::spawn(async move {
-        if let Err(e) = gui_server::serve(&addr, state).await {
-            eprintln!("server error: {e}");
-        }
-    });
+    let server = tokio::spawn(async move { gui_server::serve(&addr, state).await });
     let goal = cli.goal.clone().unwrap_or_else(|| INTERACTIVE_GOAL.to_string());
     if cli.goal.is_none() {
         eprintln!("no --goal given: the agent will ask via http://{}/assistant/chat/", cli.addr);
     }
     eprintln!("inspector: http://{}/  (the agent's screens appear here as it builds them)", cli.addr);
 
+    run(&cli, goal).await?;
+
+    // The agent is done; keep serving what it built (and its backflow) until Ctrl-C.
+    eprintln!("agent finished — still serving http://{}/ (Ctrl-C to quit)", cli.addr);
+    server.await?
+}
+
+async fn run(cli: &Cli, goal: String) -> Result<()> {
     if cli.mock {
-        return direct_access::run_agent(direct_access::MockLlm, cli.artifacts, &goal).await;
+        return direct_access::run_agent(direct_access::MockLlm, cli.artifacts.clone(), &goal).await;
     }
 
     #[cfg(feature = "openai")]
     {
         let llm = build_openai(&cli.model, cli.base_url.as_deref())?;
-        direct_access::run_agent(llm, cli.artifacts, &goal).await
+        direct_access::run_agent(llm, cli.artifacts.clone(), &goal).await
     }
     #[cfg(not(feature = "openai"))]
     {
