@@ -210,6 +210,17 @@ pub struct SaveTemplateParams {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct EmitStreamParams {
+    pub agent: String,
+    pub deck: Option<String>,
+    pub surface: String,
+    /// Stream name, e.g. `progress`; bind it in the surface as `data-kv="stream.progress…"`.
+    pub name: String,
+    /// The event value as a JSON **string** (any JSON, e.g. `{"pct":40,"label":"Indexing"}`).
+    pub data_json: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ReadDeckParams {
     pub agent: String,
     pub deck: String,
@@ -440,6 +451,26 @@ impl GuiServer {
         ok_json(serde_json::json!({ "surface": path.id(), "deleted": deleted }))
     }
 
+    #[tool(
+        description = "Stream a progress/status event to a published surface without republishing it. Viewers see it live (SSE): the latest value per `name` is in the surface's KV view as `stream.{name}`, so bind it in the HTML with data-kv=\"stream.progress.label\" etc. Events are kept append-only in the surface's stream/ dir."
+    )]
+    pub async fn emit_stream(
+        &self,
+        Parameters(p): Parameters<EmitStreamParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let path = surface_path(&p.agent, &p.deck, &p.surface)?;
+        if p.name.trim().is_empty() {
+            return Err(invalid("emit_stream needs a `name`"));
+        }
+        let value: serde_json::Value =
+            serde_json::from_str(&p.data_json).map_err(|e| invalid(format!("invalid data_json: {e}")))?;
+        let file = self
+            .workspace
+            .emit_stream(&path, &p.name, value)
+            .map_err(|e| internal(format!("{e:#}")))?;
+        ok_json(serde_json::json!({ "ok": true, "surface": path.id(), "file": file }))
+    }
+
     #[tool(description = "List all discovered agents, decks, and surfaces (live versions).")]
     pub async fn list_surfaces(&self) -> Result<CallToolResult, ErrorData> {
         let idx = gui_server::Index::build(self.workspace.root());
@@ -578,6 +609,8 @@ impl ServerHandler for GuiServer {
              For speed: scaffold_deck publishes a whole navigable deck of skeletons in one \
              call, and publish_surface can render a template (list_templates) from slot \
              data instead of full HTML; save_template stores your own reusable ones. \
+             emit_stream pushes live progress to a surface (bound via data-kv=\"stream.{name}\") \
+             without republishing. \
              Call component_help for the component reference."
                 .into(),
         );

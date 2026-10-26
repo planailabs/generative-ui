@@ -163,6 +163,82 @@ impl SurfacePath {
     pub fn kv_private_path(&self, root: &Path) -> PathBuf {
         self.state_dir(root).join("kv.private.json")
     }
+
+    /// `.../stream` — append-only progress/status [`Event`]s (agent `emit_stream`, handler
+    /// public `host.emit`). Their latest value per name joins the public KV view under
+    /// [`STREAM_KV_KEY`]; the server pushes each one over SSE.
+    pub fn stream_dir(&self, root: &Path) -> PathBuf {
+        self.dir(root).join("stream")
+    }
+
+    /// The public KV view: `state/kv.json` plus the stream's latest values under
+    /// [`STREAM_KV_KEY`].
+    pub fn public_kv(&self, root: &Path) -> serde_json::Map<String, serde_json::Value> {
+        let mut kv = read_json_map(&self.kv_path(root));
+        let stream = stream_latest(&self.stream_dir(root));
+        if !stream.is_empty() {
+            kv.insert(STREAM_KV_KEY.to_string(), serde_json::Value::Object(stream));
+        }
+        kv
+    }
+}
+
+/// Key the stream's latest values appear under in the public KV view, so the UI binds them
+/// like any KV value: `<span data-kv="stream.progress.pct">`.
+pub const STREAM_KV_KEY: &str = "stream";
+
+/// A JSON object file as a map; empty when absent or not an object.
+pub fn read_json_map(file: &Path) -> serde_json::Map<String, serde_json::Value> {
+    std::fs::read(file)
+        .ok()
+        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+        .and_then(|v| match v {
+            serde_json::Value::Object(m) => Some(m),
+            _ => None,
+        })
+        .unwrap_or_default()
+}
+
+/// Write `ev` into `dir` as `{ms}-{action}.json`, bumping `ms` past existing files so a burst
+/// of events never overwrites one. Returns the file name.
+pub fn write_event(dir: &Path, ev: &Event, mut ms: u64) -> io::Result<String> {
+    while dir.join(ev.file_name(ms)).exists() {
+        ms += 1;
+    }
+    let name = ev.file_name(ms);
+    atomic_write(&dir.join(&name), &serde_json::to_vec_pretty(ev).expect("event serializes"))?;
+    Ok(name)
+}
+
+/// Latest value per event name in a stream dir (`{ms}-…` file order is time order).
+///
+/// ponytail: reads every stream file per call; prune `stream/` (or keep a materialized
+/// latest file) if long-running surfaces emit thousands of events.
+pub fn stream_latest(dir: &Path) -> serde_json::Map<String, serde_json::Value> {
+    let mut files: Vec<(u64, PathBuf)> = match std::fs::read_dir(dir) {
+        Ok(rd) => rd
+            .filter_map(|e| e.ok())
+            .filter_map(|e| {
+                let name = e.file_name().into_string().ok()?;
+                let ms = name.strip_suffix(".json")?.split_once('-')?.0.parse().ok()?;
+                Some((ms, e.path()))
+            })
+            .collect(),
+        Err(_) => return Default::default(),
+    };
+    files.sort();
+    let mut out = serde_json::Map::new();
+    for (_, file) in files {
+        match std::fs::read(&file).map_err(|e| e.to_string()).and_then(|b| {
+            serde_json::from_slice::<Event>(&b).map_err(|e| e.to_string())
+        }) {
+            Ok(ev) => {
+                out.insert(ev.action, ev.value);
+            }
+            Err(e) => tracing::warn!(file = %file.display(), error = %e, "skip unreadable stream event"),
+        }
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -385,7 +461,8 @@ pub struct Event {
     /// Visibility — `public` events are served on the events API; `private` are agent-only.
     #[serde(default, skip_serializing_if = "Scope::is_public")]
     pub scope: Scope,
-    /// `ui` for a direct submission, `handler` for a `host.emit` from a handler.
+    /// `ui` for a direct submission, `handler` for a `host.emit` from a handler, `agent`
+    /// for an agent's stream event.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     pub received_at: String,
@@ -628,6 +705,35 @@ pub fn render_all(components: &[Component]) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn stream_events_append_and_fold_latest_into_public_kv() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = SurfacePath::new("demo", "main", "job").unwrap();
+        let ev = |name: &str, value| Event {
+            schema_version: EVENT_SCHEMA_VERSION.into(),
+            action: name.into(),
+            component: None,
+            value,
+            surface: p.id(),
+            version: None,
+            scope: Scope::Public,
+            source: Some("agent".into()),
+            received_at: "t".into(),
+        };
+        let dir = p.stream_dir(tmp.path());
+        // Same millisecond: the second write bumps instead of overwriting.
+        let a = write_event(&dir, &ev("progress", json!(10)), 5).unwrap();
+        let b = write_event(&dir, &ev("progress", json!(90)), 5).unwrap();
+        assert_ne!(a, b);
+        write_event(&dir, &ev("status", json!("indexing")), 7).unwrap();
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 3, "append-only");
+
+        atomic_write(&p.kv_path(tmp.path()), br#"{"hits":2}"#).unwrap();
+        let kv = p.public_kv(tmp.path());
+        assert_eq!(kv["hits"], 2);
+        assert_eq!(kv[STREAM_KV_KEY], json!({"progress": 90, "status": "indexing"}));
+    }
 
     #[test]
     fn slug_validation() {

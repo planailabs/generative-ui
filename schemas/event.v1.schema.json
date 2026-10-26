@@ -38,7 +38,7 @@
       "description": "Visibility — `public` events are served on the events API; `private` are agent-only."
     },
     "source": {
-      "description": "`ui` for a direct submission, `handler` for a `host.emit` from a handler.",
+      "description": "`ui` for a direct submission, `handler` for a `host.emit` from a handler, `agent` for an agent's stream event.",
       "type": [
         "string",
         "null"

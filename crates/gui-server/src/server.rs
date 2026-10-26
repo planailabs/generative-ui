@@ -71,6 +71,35 @@ impl AppState {
     }
 }
 
+/// Whether `p` is `{agent}/{deck}/{surface}/stream[/…]` under `root` (an event, its atomic-write
+/// temp, or the dir itself) — by position, so a surface named `stream` isn't one.
+fn in_stream(root: &std::path::Path, p: &std::path::Path) -> bool {
+    let Ok(rel) = p.strip_prefix(root) else { return false };
+    let parts: Vec<_> = rel.components().collect();
+    matches!(parts.len(), 4 | 5) && parts[3].as_os_str() == "stream"
+}
+
+/// Event files in `{agent}/{deck}/{surface}/stream/` dirs at or below `dir`.
+fn collect_stream_files(root: &std::path::Path, dir: &std::path::Path, out: &mut Vec<PathBuf>) {
+    let Ok(rel) = dir.strip_prefix(root) else { return };
+    let depth = rel.components().count();
+    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    for p in rd.filter_map(|e| e.ok()).map(|e| e.path()) {
+        if depth == 4 && in_stream(root, &p) && is_event_file(&p) {
+            out.push(p);
+        } else if depth < 4 && p.is_dir() {
+            collect_stream_files(root, &p, out);
+        }
+    }
+}
+
+/// A `{ms}-{name}.json` event file, not an atomic-write `.…tmp…` temp.
+fn is_event_file(p: &std::path::Path) -> bool {
+    p.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| !n.starts_with('.') && n.ends_with(".json"))
+}
+
 /// Watch the artifacts tree; on any change, re-index and notify SSE subscribers. The
 /// returned watcher must be kept alive for watching to continue.
 ///
@@ -80,8 +109,51 @@ pub fn spawn_watcher(state: AppState) -> notify::Result<notify::RecommendedWatch
     use notify::{RecursiveMode, Watcher};
     std::fs::create_dir_all(&state.root).ok();
     let st = state.clone();
+    // notify reports absolute paths; `--artifacts` may be relative.
+    let root = std::fs::canonicalize(&state.root).map_err(notify::Error::io)?;
+    // inotify reports one renamed-in file several times; push each stream file once.
+    let mut pushed: std::collections::VecDeque<PathBuf> = Default::default();
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-        if res.is_ok() {
+        let Ok(ev) = res else { return };
+        // Stream events don't change the index: push their payload instead of a ping.
+        let mut files: Vec<PathBuf> =
+            ev.paths.iter().filter(|p| in_stream(&root, p) && is_event_file(p)).cloned().collect();
+        // A file written into a just-created dir lands before inotify watches it and never
+        // fires; walk new dirs for stream files.
+        if ev.kind.is_create() {
+            for p in ev.paths.iter().filter(|p| p.is_dir()) {
+                collect_stream_files(&root, p, &mut files);
+            }
+        }
+        for file in &files {
+            if pushed.contains(file) {
+                continue;
+            }
+            {
+                match std::fs::read(file).map_err(|e| e.to_string()).and_then(|b| {
+                    serde_json::from_slice::<gui_schema::Event>(&b).map_err(|e| e.to_string())
+                }) {
+                    Ok(e) => {
+                        st.notify(
+                            &serde_json::json!({
+                                "type": "stream", "surface": e.surface, "name": e.action, "value": e.value,
+                            })
+                            .to_string(),
+                        );
+                        pushed.push_back(file.clone());
+                        if pushed.len() > 64 {
+                            pushed.pop_front();
+                        }
+                    }
+                    // A temp file renamed away before we read it; its final name fires too.
+                    Err(e) => tracing::trace!(file = %file.display(), error = %e, "stream event not readable"),
+                }
+            }
+        }
+        if !ev.paths.is_empty() && ev.paths.iter().all(|p| in_stream(&root, p)) {
+            return;
+        }
+        {
             let idx = st.reload();
             tracing::debug!(surfaces = idx.surface_count(), "re-indexed after fs change");
             // A simple ping; clients decide what to refetch. Surface views compare the live
@@ -260,7 +332,7 @@ async fn api_kv(
     if idx.surface(&path).is_none() {
         return not_found();
     }
-    Json(serde_json::Value::Object(load_kv_file(&path.kv_path(&st.root)))).into_response()
+    Json(serde_json::Value::Object(path.public_kv(&st.root))).into_response()
 }
 
 async fn api_index(State(st): State<AppState>) -> Json<api::IndexResponse> {
@@ -481,8 +553,9 @@ async fn run_surface_handler(
     persist_kv(&kv_public_path, &outcome.public, &path.id());
     persist_kv(&kv_private_path, &outcome.private, &path.id());
 
-    // Write events the handler emitted into the log for the agent (and public events API).
-    let (mut ms, iso) = now();
+    // Write events the handler emitted into the log for the agent (and public events API);
+    // public ones also go to the surface's stream, so viewers see them live.
+    let (ms, iso) = now();
     for em in &outcome.emitted {
         let ev = Event {
             schema_version: EVENT_SCHEMA_VERSION.to_string(),
@@ -495,11 +568,14 @@ async fn run_surface_handler(
             source: Some("handler".to_string()),
             received_at: iso.clone(),
         };
-        let target = path.events_dir(&root).join(ev.file_name(ms));
-        if let Err(e) = atomic_write(&target, &serde_json::to_vec_pretty(&ev).expect("event serializes")) {
+        if let Err(e) = gui_schema::write_event(&path.events_dir(&root), &ev, ms) {
             tracing::error!(surface = %path.id(), error = %e, "emit persist failed");
         }
-        ms += 1; // keep distinct filenames for a burst of emits
+        if ev.scope.is_public()
+            && let Err(e) = gui_schema::write_event(&path.stream_dir(&root), &ev, ms)
+        {
+            tracing::error!(surface = %path.id(), error = %e, "stream persist failed");
+        }
     }
 
     let status = StatusCode::from_u16(outcome.response.status).unwrap_or(StatusCode::OK);

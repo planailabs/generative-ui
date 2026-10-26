@@ -1,6 +1,6 @@
 ---
 name: authoring-ui
-description: Author interactive UI surfaces and react to user input using the gui-mcp MCP server (publish_surface, scaffold_deck, templates, define_deck, wait_for_backflow, component_help). Use when an agent needs to show a user real interactive HTML and act on what they do.
+description: Author interactive UI surfaces and react to user input using the gui-mcp MCP server (publish_surface, scaffold_deck, templates, emit_stream, define_deck, wait_for_backflow, component_help). Use when an agent needs to show a user real interactive HTML and act on what they do.
 ---
 
 # Authoring interactive UI via the MCP
@@ -74,6 +74,21 @@ Writing every surface as full HTML is the slow part. Instead:
   Templates `{% include "nav" %}` / `{% extends "card" %}` each other by name; values are
   HTML-escaped (use `| tojson` inside `data-value='…'`). A saved template with a built-in's
   name shadows it. `read_template` returns any template's source to adapt.
+
+## emit_stream — live progress without republishing
+
+Publish the surface once with bindings, then stream values into it while you work:
+
+```json
+{ "agent": "assistant", "surface": "import", "name": "progress",
+  "data_json": "{\"pct\":40,\"label\":\"Parsing rows\"}" }
+```
+
+- Bind in the HTML: `<span data-kv="stream.progress.pct">0</span>%` — the latest value per
+  `name` is in the surface's KV view under `stream`.
+- Viewers update live over SSE; events are kept append-only in the surface's `stream/` dir.
+- Handlers stream the same way: a public `host.emit(name, data)`.
+- Republish only when the *layout* changes; use `emit_stream` for values.
 
 ## wait_for_backflow
 

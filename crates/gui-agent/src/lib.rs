@@ -304,6 +304,9 @@ impl Workspace {
             atomic_write(&dir.join(&def.entry), source)
                 .with_context(|| format!("write handler entry for action {action:?}"))?;
         }
+        // Create stream/ up front: the server's fs watcher then already watches it when the
+        // first emit_stream lands (a file in a brand-new dir can beat the watch and go unseen).
+        std::fs::create_dir_all(path.stream_dir(&self.root)).context("create stream dir")?;
         tracing::info!(surface = %path.id(), %version, "published surface");
         self.prune_versions(path);
         Ok(version)
@@ -353,18 +356,29 @@ impl Workspace {
     /// Read a surface's materialized KV view for `scope`. `Public` is also served over the
     /// HTTP API and read by the UI; `Private` is agent-only. Empty when absent.
     pub fn read_kv(&self, path: &SurfacePath, scope: Scope) -> serde_json::Map<String, serde_json::Value> {
-        let file = match scope {
-            Scope::Public => path.kv_path(&self.root),
-            Scope::Private => path.kv_private_path(&self.root),
+        match scope {
+            Scope::Public => path.public_kv(&self.root),
+            Scope::Private => gui_schema::read_json_map(&path.kv_private_path(&self.root)),
+        }
+    }
+
+    /// Append a progress/status event to a surface's stream (no republish). Viewers get it
+    /// live over SSE, and its value shows in the public KV view as `stream.{name}`, so
+    /// `data-kv="stream.{name}"` bindings update. Returns the event's file name.
+    pub fn emit_stream(&self, path: &SurfacePath, name: &str, value: serde_json::Value) -> Result<String> {
+        let (ms, iso) = now();
+        let ev = Event {
+            schema_version: gui_schema::EVENT_SCHEMA_VERSION.to_string(),
+            action: name.to_string(),
+            component: None,
+            value,
+            surface: path.id(),
+            version: self.live_version(path).map(|v| v.to_string()),
+            scope: Scope::Public,
+            source: Some("agent".to_string()),
+            received_at: iso,
         };
-        std::fs::read(file)
-            .ok()
-            .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
-            .and_then(|v| match v {
-                serde_json::Value::Object(m) => Some(m),
-                _ => None,
-            })
-            .unwrap_or_default()
+        gui_schema::write_event(&path.stream_dir(&self.root), &ev, ms).context("write stream event")
     }
 
     /// All backflow events for a surface with `millis > since` (or all when `since` is

@@ -33,6 +33,6 @@
   {{/decks}}
   {{/agents}}
 </div>
-<script>try{new EventSource('/events').onmessage=()=>location.reload();}catch(e){}</script>
+<script>try{new EventSource('/events').onmessage=(m)=>{if(!m.data.includes('"type":"stream"'))location.reload();};}catch(e){}</script>
 </body>
 </html>

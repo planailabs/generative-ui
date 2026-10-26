@@ -378,6 +378,9 @@ async fn handler_emit_and_scope_split_across_the_api() {
         .unwrap();
     assert_eq!(kv["shown"], 1);
     assert!(kv.get("hidden").is_none(), "private kv hidden from the API");
+    // The public emit also went to the stream; its latest value is in the KV view.
+    assert_eq!(kv["stream"]["pub-evt"], serde_json::json!({"a":1}));
+    assert!(kv["stream"].get("priv-evt").is_none(), "private emits never stream");
 
     // The agent reads private state directly via the workspace.
     let ws = gui_agent::Workspace::new(tmp.path());
@@ -440,6 +443,44 @@ async fn watcher_reindexes_and_broadcasts() {
         }
     }
     assert!(seen, "watcher did not re-index the new surface");
+}
+
+#[tokio::test]
+async fn watcher_pushes_stream_events_as_typed_messages() {
+    use std::time::{Duration, Instant};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let state = AppState::new(tmp.path().to_path_buf());
+    let mut rx = state.events_tx.subscribe();
+    let _watcher = gui_server::server::spawn_watcher(state.clone()).expect("watcher");
+
+    // Publish first (as an agent does), wait for the watcher to see it, then stream.
+    let ws = gui_agent::Workspace::new(tmp.path());
+    let path = gui_schema::SurfacePath::new("demo", "main", "job").unwrap();
+    ws.publish(&path, &gui_agent::SurfaceBuilder::new("Job", "job").html("<span data-kv=\"stream.progress.pct\"></span>"))
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while Instant::now() < deadline && state.index.load_full().surface_count() == 0 {
+        let _ = tokio::time::timeout(Duration::from_millis(100), rx.recv()).await;
+    }
+    // Let inotify finish watching the dirs that publish just created (an agent's emit comes
+    // an LLM round-trip later; here it would race the watch setup).
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    ws.emit_stream(&path, "progress", serde_json::json!({"pct": 40})).unwrap();
+
+    let mut got = None;
+    while Instant::now() < deadline && got.is_none() {
+        if let Ok(Ok(msg)) = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
+            let v: serde_json::Value = serde_json::from_str(&msg).unwrap();
+            if v["type"] == "stream" {
+                got = Some(v);
+            }
+        }
+    }
+    let v = got.expect("no stream message broadcast");
+    assert_eq!(v["surface"], "demo/main/job");
+    assert_eq!(v["name"], "progress");
+    assert_eq!(v["value"]["pct"], 40);
 }
 
 #[tokio::test]

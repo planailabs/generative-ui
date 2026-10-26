@@ -1,0 +1,9 @@
+{
+  "schema_version": "generative-ui/event.v1",
+  "action": "progress",
+  "value": { "pct": 0, "label": "waiting" },
+  "surface": "demo/main/progress",
+  "version": "1",
+  "source": "agent",
+  "received_at": "2026-10-26T18:00:00Z"
+}

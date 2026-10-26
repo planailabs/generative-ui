@@ -1,0 +1,8 @@
+<ui-heading level="1">Import job</ui-heading>
+<ui-card>
+  <ui-text>Progress: <span data-kv="stream.progress.pct">0</span>%</ui-text>
+  <ui-text>Status: <span data-kv="stream.progress.label">waiting</span></ui-text>
+</ui-card>
+<ui-text>Values stream in live (agent <code>emit_stream</code> or a handler's <code>host.emit</code>); the surface is never republished.</ui-text>
+<ui-button data-action="step">Advance (handler emits progress)</ui-button>
+<ui-deck-nav></ui-deck-nav>

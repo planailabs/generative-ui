@@ -19,12 +19,14 @@ event files. The filesystem is the bus; discovery and backflow are symmetric.
 | **surface** | A stable, regenerable UI key (the "dashboard"). Newest version wins; history kept. |
 | **version** | A published snapshot of a surface (`v/{unix-ms}/`). Sorts by id; max = live. |
 | **backflow** | A user interaction written back into the surface's `events/` dir. |
+| **stream** | Append-only progress/status events in the surface's `stream/` dir (agent `emit_stream`, handler public `host.emit`); pushed over SSE, latest per name in the KV view as `stream.{name}`. |
 
 ## Directory schema (the contract)
 
 ```
 artifacts/{agent}/{deck}/{surface}/v/{version}/{frame.json,index.html,assets/}
 artifacts/{agent}/{deck}/{surface}/events/{unix-ms}-{action}.json   # server-written
+artifacts/{agent}/{deck}/{surface}/stream/{unix-ms}-{name}.json     # progress (agent/handler)
 artifacts/{agent}/{deck}/deck.json                                  # optional: entry, order
 artifacts/{agent}/agent.json                                        # optional: name, description
 ```

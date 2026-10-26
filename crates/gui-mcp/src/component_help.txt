@@ -26,6 +26,12 @@ list_templates shows the slots (built-ins: skeleton, form, list, dashboard, part
 save_template stores your own minijinja (Jinja2) template — {% include "nav" %},
 {% extends "name" %}, values HTML-escaped, `| tojson` for data-value.
 
+Streaming progress (no republish): emit_stream(surface, name, data_json) appends an event
+the browser gets live; its latest value is in the KV view as stream.{name}, so bind it:
+  <ui-text><span data-kv="stream.progress.pct">0</span>% — <span data-kv="stream.progress.label"></span></ui-text>
+A handler's public host.emit(name, data) streams the same way. Custom JS can listen with
+document.addEventListener("ui-stream", e => e.detail /* {surface, name, value} */).
+
 Interaction flows back via wait_for_backflow / list_backflow:
   - a button yields { action, value }
   - a form yields  { action: "<form action>", value: { field: value, ... } }

@@ -337,7 +337,21 @@ function subscribeReload() {
     const es = new EventSource("/events");
     // On any change, check whether *this* surface has a newer live version and reload if so.
     // A backflow event never bumps the version, so the user's own click won't reload them.
-    es.onmessage = async () => {
+    es.onmessage = async (m) => {
+      let msg = {};
+      try {
+        msg = JSON.parse(m.data);
+      } catch {
+        /* not JSON — treat as a plain change ping */
+      }
+      // A stream event (progress/status) never changes the surface: update its KV bindings
+      // and let custom code listen via document.addEventListener("ui-stream", …).
+      if (msg.type === "stream") {
+        if (msg.surface !== ctx.surface) return;
+        document.dispatchEvent(new CustomEvent("ui-stream", { detail: msg }));
+        refreshKv();
+        return;
+      }
       if (needsReload(ctx.version, await liveVersion())) {
         location.reload();
         return;

@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use gui_agent::Workspace;
 use gui_mcp::{
-    DefineDeckParams, DeleteBackflowParams, DrainBackflowParams, GuiServer, ListBackflowParams,
+    DefineDeckParams, DeleteBackflowParams, EmitStreamParams, DrainBackflowParams, GuiServer, ListBackflowParams,
     PublishParams, ReadSurfaceParams, SaveTemplateParams, ScaffoldParams, ScaffoldSurface,
     TemplateNameParams, WaitParams,
 };
@@ -388,6 +388,26 @@ async fn saved_templates_list_compose_and_shadow_builtins() {
     save("skeleton", "custom {{ title }}").await.expect("shadow");
     let read = result_text(&srv.read_template(Parameters(TemplateNameParams { name: "skeleton".into() })).await.unwrap());
     assert!(read.contains("custom") && read.contains(r#"\"source\":\"custom\""#), "{read}");
+}
+
+#[tokio::test]
+async fn emit_stream_appends_and_shows_in_public_kv() {
+    let (tmp, srv) = server();
+    let emit = |data: &str| EmitStreamParams {
+        agent: "demo".into(),
+        deck: None,
+        surface: "job".into(),
+        name: "progress".into(),
+        data_json: data.into(),
+    };
+    srv.emit_stream(Parameters(emit(r#"{"pct":10}"#))).await.expect("emit");
+    srv.emit_stream(Parameters(emit(r#"{"pct":60,"label":"Indexing"}"#))).await.expect("emit");
+    assert!(srv.emit_stream(Parameters(emit("not json"))).await.is_err());
+
+    let path = gui_schema::SurfacePath::new("demo", "main", "job").unwrap();
+    assert_eq!(std::fs::read_dir(path.stream_dir(tmp.path())).unwrap().count(), 2);
+    let kv = Workspace::new(tmp.path()).read_kv(&path, gui_agent::Scope::Public);
+    assert_eq!(kv["stream"]["progress"]["label"], "Indexing");
 }
 
 /// Serialize a tool result to JSON for substring assertions (robust to the exact Content

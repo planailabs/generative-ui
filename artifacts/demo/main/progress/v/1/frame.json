@@ -1,0 +1,10 @@
+{
+  "schema_version": "generative-ui/surface.v1",
+  "title": "Progress",
+  "alt_text": "A job's live progress: percentage and status streamed without republishing",
+  "created_at": "2026-10-26T18:00:00Z",
+  "handlers": {
+    "step": { "lang": "js", "entry": "main.js", "capabilities": { "kv": true } }
+  },
+  "nav": [{ "to": "sales", "label": "Back to Sales" }]
+}

@@ -16,10 +16,14 @@ directory schema, and one-way events for a directory-based backflow loop.
   interconnected surfaces (`main` by default). A *surface* is a regenerable "dashboard"
   whose newest version is live; history is retained.
 - **backflow**: every interaction is written to the surface's `events/` directory.
+- **stream**: live progress/status events (agent `emit_stream`, handler `host.emit`) appended
+  to the surface's `stream/` directory and pushed over SSE (`/events`, `type: "stream"`); the
+  latest value per name shows in the KV view as `stream.{name}` (bind with `data-kv`).
 
 ```
 artifacts/{agent}/{deck}/{surface}/v/{version}/{frame.json,index.html}
 artifacts/{agent}/{deck}/{surface}/events/{unix-ms}-{action}.json
+artifacts/{agent}/{deck}/{surface}/stream/{unix-ms}-{name}.json   # append-only progress events
 artifacts/{agent}/{deck}/deck.json     # optional: entry surface + nav order
 ```
 
@@ -33,6 +37,7 @@ cargo run -p gui-server -- --artifacts ./artifacts
 # open http://localhost:8080/ for the inspector, or a surface directly:
 # http://localhost:8080/demo/sales/
 # http://localhost:8080/demo/handlers/   sandboxed JS/Lua/WASM handlers (click Bump → counts)
+# http://localhost:8080/demo/main/progress/   streamed progress bound via data-kv
 ```
 
 Surfaces can ship **sandboxed handlers** (JS/Lua/WASM) that run server-side on a backflow

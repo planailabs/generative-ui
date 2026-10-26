@@ -1,5 +1,10 @@
 {
   "name": "Demo dashboard",
   "entry": "sales",
-  "order": ["sales", "region-detail", "settings"]
+  "order": [
+    "sales",
+    "region-detail",
+    "settings",
+    "progress"
+  ]
 }
