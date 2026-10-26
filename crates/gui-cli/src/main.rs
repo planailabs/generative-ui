@@ -12,6 +12,8 @@ use gui_agent::{SurfaceBuilder, Workspace};
 use gui_schema::{atomic_write, Component, DeckManifest, Event, SurfacePath, Version, EVENT_SCHEMA_VERSION};
 use gui_server::Index;
 
+mod kv_trigger;
+
 #[derive(Parser)]
 #[command(name = "gui", about = "Debug/ops CLI for the Generative UI Suite.")]
 struct Cli {
@@ -70,6 +72,28 @@ enum Cmd {
     },
     /// Watch the artifacts tree and log changes as they happen.
     Watch,
+    /// Print a reagent trigger event (one JSON line) per changed key in surfaces' public KV
+    /// views. Run as a reagent `watch` trigger, or `poll` with `--once`.
+    KvTrigger {
+        /// Only this surface (`agent/deck/surface`); repeatable. Default: all.
+        #[arg(long = "surface")]
+        surfaces: Vec<String>,
+        /// Only KV keys with this prefix (`stream.progress`, `saved`); repeatable.
+        #[arg(long = "key")]
+        keys: Vec<String>,
+        /// reagent `to`: `new` (start a task), `running` (message the running one) or a task id.
+        #[arg(long, default_value = "new")]
+        to: String,
+        /// Snapshot file. Default: `$REAGENT_STATE/kv-trigger.json` when set, else in memory.
+        #[arg(long)]
+        state: Option<PathBuf>,
+        /// Diff once and exit (poll mode).
+        #[arg(long)]
+        once: bool,
+        /// Also report `stream.*` keys (off: they're mostly the agent's own progress).
+        #[arg(long)]
+        with_stream: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -131,6 +155,12 @@ fn main() -> Result<()> {
             }
         },
         Cmd::Watch => cmd_watch(&root),
+        Cmd::KvTrigger { surfaces, keys, to, state, once, with_stream } => {
+            let state = state.or_else(|| {
+                std::env::var_os("REAGENT_STATE").map(|d| PathBuf::from(d).join("kv-trigger.json"))
+            });
+            kv_trigger::run(&root, kv_trigger::Opts { surfaces, keys, to, state, once, with_stream })
+        }
     }
 }
 
