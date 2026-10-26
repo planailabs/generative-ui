@@ -1459,6 +1459,7 @@ dependencies = [
  "gui-schema",
  "gui-server",
  "notify",
+ "serde",
  "serde_json",
  "tempfile",
  "time",

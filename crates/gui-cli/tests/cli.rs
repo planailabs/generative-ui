@@ -71,7 +71,7 @@ fn publish_index_deck_backflow_validate() {
 }
 
 #[test]
-fn kv_trigger_reports_each_changed_key_once() {
+fn trigger_reports_kv_changes_and_new_backflow_once() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path();
     let html = dir.join("s.html");
@@ -81,33 +81,54 @@ fn kv_trigger_reports_each_changed_key_once() {
     let kv = dir.join("demo/main/s/state/kv.json");
     std::fs::create_dir_all(kv.parent().unwrap()).unwrap();
     std::fs::write(&kv, r#"{"saved":1,"other":"x"}"#).unwrap();
+    // History from before the first run is the baseline, never reported.
+    assert!(gui(dir, &["backflow", "emit", "demo", "s", "--action", "old"]).status.success());
 
     let state = dir.join("snap.json");
-    let run = || gui(dir, &["kv-trigger", "--once", "--with-stream", "--state", state.to_str().unwrap(), "--to", "running"]);
-    // First run: silent baseline.
-    assert_eq!(stdout(&run()), "");
+    let st = state.to_str().unwrap();
+    let events = |args: &[&str]| -> Vec<serde_json::Value> {
+        let mut a = vec!["trigger", "--once", "--state", st];
+        a.extend_from_slice(args);
+        let out = gui(dir, &a);
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        stdout(&out).lines().map(|l| serde_json::from_str(l).expect("JSON line")).collect()
+    };
+    assert!(events(&[]).is_empty(), "first run: silent baseline");
 
     std::fs::write(&kv, r#"{"saved":2,"other":"x"}"#).unwrap();
     let ws = gui_agent::Workspace::new(dir);
     let path = gui_schema::SurfacePath::new("demo", "main", "s").unwrap();
     ws.emit_stream(&path, "progress", serde_json::json!({"pct": 50})).unwrap();
-    let out = run();
-    let events: Vec<serde_json::Value> =
-        stdout(&out).lines().map(|l| serde_json::from_str(l).expect("JSON line")).collect();
-    assert_eq!(events.len(), 2, "{events:?}");
-    let saved = events.iter().find(|e| e["vars"]["kv_key"] == "saved").expect("saved changed");
-    assert_eq!((saved["vars"]["old"].clone(), saved["vars"]["new"].clone()), (1.into(), 2.into()));
+    assert!(gui(dir, &["backflow", "emit", "demo", "s", "--action", "submit", "--value", r#"{"name":"Ada"}"#])
+        .status
+        .success());
+    let evs = events(&["--with-stream", "--to", "running"]);
+    assert_eq!(evs.len(), 3, "{evs:?}");
+    let saved = evs.iter().find(|e| e["vars"]["kv_key"] == "saved").expect("saved changed");
+    assert_eq!((saved["vars"]["kind"].clone(), saved["vars"]["old"].clone(), saved["vars"]["new"].clone()), ("kv".into(), 1.into(), 2.into()));
     assert_eq!(saved["to"], "running");
-    assert_eq!(saved["vars"]["surface"], "demo/main/s");
-    assert!(events.iter().any(|e| e["vars"]["kv_key"] == "stream.progress" && e["vars"]["new"]["pct"] == 50));
+    assert!(evs.iter().any(|e| e["vars"]["kv_key"] == "stream.progress" && e["vars"]["new"]["pct"] == 50));
+    let bf = evs.iter().find(|e| e["vars"]["kind"] == "backflow").expect("backflow event");
+    assert_eq!((bf["vars"]["action"].clone(), bf["vars"]["value"]["name"].clone()), ("submit".into(), "Ada".into()));
+    assert_eq!(bf["vars"]["surface"], "demo/main/s");
 
-    // Nothing changed since: nothing repeats.
-    assert_eq!(stdout(&run()), "");
-    // Without --with-stream, stream keys are ignored.
+    // Nothing new: nothing repeats. Stream keys are off by default.
     ws.emit_stream(&path, "progress", serde_json::json!({"pct": 80})).unwrap();
-    assert_eq!(stdout(&gui(dir, &["kv-trigger", "--once", "--state", state.to_str().unwrap()])), "");
-    // --key filters.
+    assert!(events(&[]).is_empty());
+
+    // Filters: --action / --key, --no-backflow / --no-kv.
+    for a in ["ping", "submit-2"] {
+        assert!(gui(dir, &["backflow", "emit", "demo", "s", "--action", a]).status.success());
+    }
     std::fs::write(&kv, r#"{"saved":3,"other":"y"}"#).unwrap();
-    let out = gui(dir, &["kv-trigger", "--once", "--state", state.to_str().unwrap(), "--key", "saved"]);
-    assert_eq!(stdout(&out).lines().count(), 1, "{}", stdout(&out));
+    let evs = events(&["--action", "submit", "--key", "saved"]);
+    let kinds: Vec<_> = evs.iter().map(|e| (e["vars"]["kind"].clone(), e["vars"]["action"].clone(), e["vars"]["kv_key"].clone())).collect();
+    assert_eq!(evs.len(), 2, "{kinds:?}");
+    assert!(gui(dir, &["backflow", "emit", "demo", "s", "--action", "submit"]).status.success());
+    std::fs::write(&kv, r#"{"saved":4}"#).unwrap();
+    assert!(events(&["--no-backflow"]).iter().all(|e| e["vars"]["kind"] == "kv"));
+    // ...which kept the backflow watermark: only the one unseen event, not the history.
+    let evs = events(&[]);
+    assert_eq!(evs.len(), 1, "{evs:?}");
+    assert_eq!(evs[0]["vars"]["action"], "submit");
 }

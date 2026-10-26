@@ -73,11 +73,14 @@ cargo run -p gui-cli -- --artifacts ./artifacts backflow emit demo sales --actio
 cargo run -p gui-cli -- --artifacts ./artifacts index
 ```
 
-`gui kv-trigger` turns KV changes into [reagent](https://reagent.plan.ai) trigger events: one
-JSON line (`{key, to, title, message, vars: {surface, kv_key, old, new, url, …}}`) per changed
-key of a surface's public KV view. Use it as a `watch` trigger (or `poll` with `--once`); it
-keeps its snapshot in `$REAGENT_STATE`. Filters: `--surface a/d/s`, `--key prefix`; `--to
-running` messages the running task; `--with-stream` also reports `stream.*` progress.
+`gui trigger` turns what happens on surfaces into [reagent](https://reagent.plan.ai) trigger
+events, one JSON line (`{key, to, title, message, vars}`) each: every new **backflow** event
+(`vars.kind: "backflow"`, with `action, value, source, scope, file`) and every changed key of a
+surface's public **KV** view (`vars.kind: "kv"`, with `kv_key, old, new`); `vars` also has
+`surface, agent, deck, name, url`. Use it as a `watch` trigger (or `poll` with `--once`); it keeps
+its snapshot in `$REAGENT_STATE` and takes what exists on its first run as the baseline. Filters:
+`--surface a/d/s`, `--action prefix`, `--key prefix`, `--no-kv`, `--no-backflow`; `--to running`
+messages the running task; `--with-stream` also reports `stream.*` progress keys.
 
 The MCP server (`cargo run -p gui-mcp -- --artifacts ./artifacts`) exposes the same
 authoring/awaiting flow to any MCP-speaking agent (`publish_surface`, `define_deck`,

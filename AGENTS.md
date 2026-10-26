@@ -57,7 +57,7 @@ cargo test                  # run all tests (the gate)
 cargo run -p gui-server -- --artifacts ./artifacts
 cargo run -p gui-server -- --artifacts ./artifacts --disable-handlers # turn handler execution off
 cargo run -p gui-cli -- index ./artifacts
-cargo run -p gui-cli -- --artifacts ./artifacts kv-trigger --once   # KV changes as reagent trigger events
+cargo run -p gui-cli -- --artifacts ./artifacts trigger --once   # backflow + KV changes as reagent trigger events
 nix flake check             # cargo test + clippy as flake checks
 nix build .#gui-server      # build a single binary
 UPDATE_SCHEMAS=1 cargo test -p gui-schema   # regenerate schemas/*.json from the Rust types
