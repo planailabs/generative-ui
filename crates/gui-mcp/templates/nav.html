@@ -1,0 +1,3 @@
+{# Partial: links to `nav` ([{to, label}]) and prev/next deck chrome. Include with {% include "nav" %}. #}
+{% if nav %}<ui-card>{% for n in nav %}<ui-link to="{{ n.to }}">{{ n.label or n.to }}</ui-link> {% endfor %}</ui-card>{% endif %}
+<ui-deck-nav></ui-deck-nav>

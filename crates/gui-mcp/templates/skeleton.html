@@ -1,0 +1,5 @@
+{# Placeholder surface. Slots: title, purpose, sections ([string] — one placeholder card each), nav (auto from links). #}
+<ui-heading level="1">{{ title }}</ui-heading>
+{% if purpose %}<ui-text>{{ purpose }}</ui-text>{% endif %}
+{% for s in sections %}<ui-card><ui-heading level="3">{{ s }}</ui-heading><ui-text>Coming soon.</ui-text></ui-card>
+{% endfor %}{% include "nav" %}

@@ -1476,6 +1476,7 @@ dependencies = [
  "gui-agent",
  "gui-schema",
  "gui-server",
+ "minijinja",
  "rmcp 1.8.0",
  "serde",
  "serde_json",
@@ -2356,6 +2357,15 @@ checksum = "f7c44f8e672c00fe5308fa235f821cb4198414e1c77935c1ab6948d3fd78550e"
 dependencies = [
  "mime",
  "unicase",
+]
+
+[[package]]
+name = "minijinja"
+version = "3.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90086695417a271bc96e6cb50618555614ca48fa3bb0d9aa96e3468b0f84431e"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

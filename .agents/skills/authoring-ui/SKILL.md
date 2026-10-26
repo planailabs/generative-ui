@@ -1,6 +1,6 @@
 ---
 name: authoring-ui
-description: Author interactive UI surfaces and react to user input using the gui-mcp MCP server (publish_surface, define_deck, wait_for_backflow, component_help). Use when an agent needs to show a user real interactive HTML and act on what they do.
+description: Author interactive UI surfaces and react to user input using the gui-mcp MCP server (publish_surface, scaffold_deck, templates, define_deck, wait_for_backflow, component_help). Use when an agent needs to show a user real interactive HTML and act on what they do.
 ---
 
 # Authoring interactive UI via the MCP
@@ -47,6 +47,33 @@ Repeat 3–4 for a conversation conducted entirely through the UI.
   browser. Prefer the `<ui-*>` components directly; the plain-HTML translation is a convenience.
 - `nav: [{ "to": "other-surface", "label": "..." }]` links surfaces into a navigable deck.
 - Republishing the same `surface` supersedes the old version (history is kept).
+
+## Fast path: templates and scaffold_deck
+
+Writing every surface as full HTML is the slow part. Instead:
+
+- `scaffold_deck` — one call publishes a whole deck of linked surfaces and wires `deck.json`
+  (order as given, entry = first). Each surface renders from a template (default `skeleton`:
+  title, purpose, placeholder `sections`, links), so the user can click through immediately:
+  ```json
+  { "agent": "assistant", "deck": "crm", "surfaces": [
+    { "surface": "contacts", "title": "Contacts", "purpose": "Browse people",
+      "links": [{ "to": "add-contact", "label": "Add" }] },
+    { "surface": "add-contact", "title": "Add contact", "template": "form",
+      "data_json": "{\"action\":\"add\",\"fields\":[{\"name\":\"email\",\"type\":\"email\"}]}" } ] }
+  ```
+  Then fill surfaces one by one (or in parallel) with `publish_surface`; the newer version
+  replaces the skeleton.
+- `publish_surface` with `template` + `data_json` (a JSON object as a string) instead of
+  `html`: you send slot values, the server renders the markup. `title` and `nav` fill in
+  from the call. `list_templates` shows each template's slots (built-ins: `skeleton`, `form`,
+  `list`, `dashboard`, partial `nav`).
+- **Your own templates**: `save_template` stores a minijinja (Jinja2) HTML template in the
+  templates dir (`gui-mcp --templates`, default `./templates`); you may also write
+  `{name}.html` files there directly. Start it with a `{# description + slots #}` comment.
+  Templates `{% include "nav" %}` / `{% extends "card" %}` each other by name; values are
+  HTML-escaped (use `| tojson` inside `data-value='…'`). A saved template with a built-in's
+  name shadows it. `read_template` returns any template's source to adapt.
 
 ## wait_for_backflow
 

@@ -14,6 +14,9 @@ struct Cli {
     /// Newest surface versions to keep per surface on publish (older are GC'd; 0 = keep all).
     #[arg(long, default_value_t = gui_agent::DEFAULT_KEEP_VERSIONS)]
     keep_versions: usize,
+    /// Directory for model-authored surface templates (`save_template`).
+    #[arg(long, default_value = "templates")]
+    templates: PathBuf,
 }
 
 #[tokio::main]
@@ -26,5 +29,6 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let cli = Cli::parse();
-    gui_mcp::run_stdio(Workspace::new(cli.artifacts).with_keep_versions(cli.keep_versions)).await
+    let workspace = Workspace::new(cli.artifacts).with_keep_versions(cli.keep_versions);
+    gui_mcp::run_stdio(gui_mcp::GuiServer::new(workspace).with_templates_dir(cli.templates)).await
 }

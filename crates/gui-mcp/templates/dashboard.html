@@ -1,0 +1,6 @@
+{# Dashboard. Slots: title, intro, stats ([{label, value, kv}] — `kv` live-binds the value to a KV key), actions ([{label, action, value}]). #}
+<ui-heading level="1">{{ title }}</ui-heading>
+{% if intro %}<ui-text>{{ intro }}</ui-text>{% endif %}
+{% for s in stats %}<ui-card><ui-text>{{ s.label }}</ui-text><ui-heading level="2">{% if s.kv %}<span data-kv="{{ s.kv }}">{{ s.value }}</span>{% else %}{{ s.value }}{% endif %}</ui-heading></ui-card>
+{% endfor %}{% for a in actions %}<ui-button data-action="{{ a.action }}" data-value='{{ a.value | tojson }}'>{{ a.label or a.action }}</ui-button>
+{% endfor %}{% include "nav" %}

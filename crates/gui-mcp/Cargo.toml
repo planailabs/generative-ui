@@ -22,6 +22,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 rmcp = { version = "1.8.0", features = ["server", "macros", "transport-io"] }
 base64 = "0.22"
+minijinja = { version = "3.0.3", features = ["serde", "json", "fuel"] }
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -6,7 +6,8 @@ use std::time::Duration;
 use gui_agent::Workspace;
 use gui_mcp::{
     DefineDeckParams, DeleteBackflowParams, DrainBackflowParams, GuiServer, ListBackflowParams,
-    PublishParams, ReadSurfaceParams, WaitParams,
+    PublishParams, ReadSurfaceParams, SaveTemplateParams, ScaffoldParams, ScaffoldSurface,
+    TemplateNameParams, WaitParams,
 };
 use rmcp::handler::server::wrapper::Parameters;
 
@@ -26,7 +27,9 @@ async fn publish_and_define_deck_write_the_directory() {
         surface: "sales".into(),
         title: "Sales".into(),
         alt_text: "Revenue".into(),
-        html: "<ui-heading level=\"1\">Sales</ui-heading><ui-button data-action=\"refresh\">Refresh</ui-button>".into(),
+        html: Some("<ui-heading level=\"1\">Sales</ui-heading><ui-button data-action=\"refresh\">Refresh</ui-button>".into()),
+        template: None,
+        data_json: None,
         nav: Some(vec![gui_mcp::NavParam { to: "settings".into(), label: Some("Settings".into()) }]),
         handlers: None,
         metadata_json: None,
@@ -77,7 +80,9 @@ async fn wait_for_backflow_returns_a_written_event() {
         surface: "sales".into(),
         title: "Sales".into(),
         alt_text: "alt".into(),
-        html: "<ui-text>hi</ui-text>".into(),
+        html: Some("<ui-text>hi</ui-text>".into()),
+        template: None,
+        data_json: None,
         nav: None,
         handlers: None,
         metadata_json: None,
@@ -218,7 +223,9 @@ async fn publish_surface_with_js_handler_writes_entry_and_manifest() {
         surface: "counter".into(),
         title: "Counter".into(),
         alt_text: "a".into(),
-        html: "<ui-button data-action=\"bump\">Bump</ui-button><span data-kv=\"hits\"></span>".into(),
+        html: Some("<ui-button data-action=\"bump\">Bump</ui-button><span data-kv=\"hits\"></span>".into()),
+        template: None,
+        data_json: None,
         nav: None,
         handlers: Some(vec![gui_mcp::HandlerParam {
             action: "bump".into(),
@@ -246,6 +253,141 @@ async fn publish_surface_with_js_handler_writes_entry_and_manifest() {
     assert!(def.capabilities.kv);
     // The entry file was written alongside the manifest.
     assert!(path.version_dir(tmp.path(), version).join("main.js").exists());
+}
+
+fn live_html(root: &std::path::Path, deck: &str, surface: &str) -> (gui_schema::Manifest, String) {
+    let ws = Workspace::new(root);
+    let path = gui_schema::SurfacePath::new("demo", deck, surface).unwrap();
+    ws.read_version(&path, ws.live_version(&path).expect("published")).unwrap()
+}
+
+fn scaffold_surface(surface: &str, links: &[&str]) -> ScaffoldSurface {
+    ScaffoldSurface {
+        surface: surface.into(),
+        title: surface.to_uppercase(),
+        purpose: Some(format!("{surface} purpose")),
+        template: None,
+        data_json: None,
+        links: Some(links.iter().map(|l| gui_mcp::NavParam { to: (*l).into(), label: None }).collect()),
+        alt_text: None,
+    }
+}
+
+#[tokio::test]
+async fn scaffold_deck_publishes_linked_skeletons_and_wires_the_deck() {
+    let (tmp, srv) = server();
+    let mut settings = scaffold_surface("settings", &["home"]);
+    settings.template = Some("form".into());
+    settings.data_json = Some(r#"{"action":"save","fields":[{"name":"email","type":"email"}]}"#.into());
+    srv.scaffold_deck(Parameters(ScaffoldParams {
+        agent: "demo".into(),
+        deck: Some("app".into()),
+        name: Some("App".into()),
+        entry: None,
+        surfaces: vec![scaffold_surface("home", &["settings"]), settings],
+    }))
+    .await
+    .expect("scaffold");
+
+    let (manifest, html) = live_html(tmp.path(), "app", "home");
+    assert_eq!(manifest.alt_text, "home purpose");
+    assert_eq!(manifest.nav[0].to, "settings");
+    assert!(html.contains("<ui-heading level=\"1\">HOME</ui-heading>"), "{html}");
+    assert!(html.contains(r#"<ui-link to="settings">settings</ui-link>"#), "{html}");
+    let (_, html) = live_html(tmp.path(), "app", "settings");
+    assert!(html.contains(r#"<ui-form data-action="save">"#), "{html}");
+    assert!(html.contains(r#"<ui-input name="email" label="email" type="email">"#), "{html}");
+
+    let deck: gui_schema::DeckManifest =
+        serde_json::from_slice(&std::fs::read(tmp.path().join("demo/app/deck.json")).unwrap()).unwrap();
+    assert_eq!(deck.entry.as_deref(), Some("home"));
+    assert_eq!(deck.order, ["home", "settings"]);
+
+    // A bad template fails before anything is written.
+    let mut bad = scaffold_surface("x", &[]);
+    bad.template = Some("nope".into());
+    assert!(srv
+        .scaffold_deck(Parameters(ScaffoldParams {
+            agent: "demo".into(),
+            deck: Some("other".into()),
+            name: None,
+            entry: None,
+            surfaces: vec![scaffold_surface("ok", &[]), bad],
+        }))
+        .await
+        .is_err());
+    assert!(!tmp.path().join("demo/other").exists());
+}
+
+#[tokio::test]
+async fn publish_renders_a_template_and_escapes_slot_values() {
+    let (tmp, srv) = server();
+    let publish = |html: Option<&str>, template: Option<&str>| PublishParams {
+        agent: "demo".into(),
+        deck: None,
+        surface: "items".into(),
+        title: "Items <b>".into(),
+        alt_text: "items".into(),
+        html: html.map(Into::into),
+        template: template.map(Into::into),
+        data_json: Some(r#"{"items":[{"title":"<script>","action":"pick","value":{"id":"a'b"}}]}"#.into()),
+        nav: None,
+        handlers: None,
+        metadata_json: None,
+    };
+    srv.publish_surface(Parameters(publish(None, Some("list")))).await.expect("publish");
+    let (_, html) = live_html(tmp.path(), "main", "items");
+    assert!(html.contains("Items &lt;b&gt;") && html.contains("&lt;script&gt;"), "{html}");
+    assert!(!html.contains("a'b"), "value must not break out of the attribute: {html}");
+
+    // Exactly one of html/template.
+    assert!(srv.publish_surface(Parameters(publish(Some("x"), Some("list")))).await.is_err());
+    assert!(srv.publish_surface(Parameters(publish(None, None))).await.is_err());
+}
+
+#[tokio::test]
+async fn saved_templates_list_compose_and_shadow_builtins() {
+    let (tmp, srv) = server();
+    let srv = srv.with_templates_dir(tmp.path().join("templates"));
+    let save = |name: &str, source: &str| {
+        srv.save_template(Parameters(SaveTemplateParams { name: name.into(), source: source.into() }))
+    };
+    save("card", "{# A card. Slots: title, body #}<ui-card><ui-heading level=\"2\">{{ title }}</ui-heading>{% block body %}{% endblock %}</ui-card>{% include \"nav\" %}")
+        .await
+        .expect("save");
+    save("note", "{% extends \"card\" %}{% block body %}<ui-text>{{ body }}</ui-text>{% endblock %}")
+        .await
+        .expect("save extending");
+    assert!(save("Bad/Name", "x").await.is_err());
+    assert!(save("broken", "{% if %}").await.is_err());
+
+    let list = result_text(&srv.list_templates().await.unwrap());
+    assert!(list.contains(r#"\"name\":\"card\""#) && list.contains("A card. Slots: title, body"), "{list}");
+    assert!(list.contains(r#"\"name\":\"skeleton\""#), "{list}");
+
+    srv.publish_surface(Parameters(PublishParams {
+        agent: "demo".into(),
+        deck: None,
+        surface: "n".into(),
+        title: "Note".into(),
+        alt_text: "note".into(),
+        html: None,
+        template: Some("note".into()),
+        data_json: Some(r#"{"body":"hello"}"#.into()),
+        nav: Some(vec![gui_mcp::NavParam { to: "home".into(), label: Some("Home".into()) }]),
+        handlers: None,
+        metadata_json: None,
+    }))
+    .await
+    .expect("publish custom");
+    let (_, html) = live_html(tmp.path(), "main", "n");
+    assert!(html.contains("<ui-heading level=\"2\">Note</ui-heading><ui-text>hello</ui-text>"), "{html}");
+    assert!(html.contains(r#"<ui-link to="home">Home</ui-link>"#), "{html}");
+
+    // A saved template shadows the built-in of the same name.
+    save("skeleton", "custom {{ title }}").await.expect("shadow");
+    let read = result_text(&srv.read_template(Parameters(TemplateNameParams { name: "skeleton".into() })).await.unwrap());
+    assert!(read.contains("custom") && read.contains(r#"\"source\":\"custom\""#), "{read}");
 }
 
 /// Serialize a tool result to JSON for substring assertions (robust to the exact Content

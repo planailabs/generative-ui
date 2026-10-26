@@ -49,11 +49,13 @@ where
     tracing::info!("connecting MCP client to gui-mcp over in-process duplex");
     let tools = mcp_tools::connect(cr, cw).await?;
 
+    // swiftide renders the system prompt with Tera; `raw` keeps the skill's (and the goal's)
+    // literal `{% ... %}` / `{{ ... }}` from being parsed as template syntax.
     let system = format!(
-        "{SKILL}\n\n# Your task right now\n{goal}\n\nYou author the app yourself using the \
+        "{{% raw %}}{SKILL}\n\n# Your task right now\n{goal}\n\nYou author the app yourself using the \
          gui:* tools. If unsure about components, call gui:component_help first. Build each \
          screen with gui:publish_surface (compose a component tree); wire navigation with \
-         gui:define_deck. When the app is complete, stop and briefly summarize what you built."
+         gui:define_deck. When the app is complete, stop and briefly summarize what you built.{{% endraw %}}"
     );
 
     let mut agent = agents::Agent::builder()

@@ -1,0 +1,6 @@
+{# List of cards. Slots: title, intro, empty (text when no items), items ([{title, text, to, action, value, button}] — `to` links to a surface; `action` adds a button sending `value`). #}
+<ui-heading level="1">{{ title }}</ui-heading>
+{% if intro %}<ui-text>{{ intro }}</ui-text>{% endif %}
+{% for i in items %}<ui-card><ui-heading level="3">{{ i.title }}</ui-heading>{% if i.text %}<ui-text>{{ i.text }}</ui-text>{% endif %}{% if i.to %}<ui-link to="{{ i.to }}">Open</ui-link>{% endif %}{% if i.action %}<ui-button data-action="{{ i.action }}" data-value='{{ i.value | tojson }}'>{{ i.button or i.action }}</ui-button>{% endif %}</ui-card>
+{% else %}<ui-text>{{ empty or "Nothing here yet." }}</ui-text>
+{% endfor %}{% include "nav" %}

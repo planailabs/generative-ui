@@ -1,0 +1,10 @@
+{# Form. Slots: title, intro, action (backflow action, default "submit"), submit (button label), fields ([{name, label, type, placeholder, options: [string | {value, label}], checked}] — type "select"/"checkbox" or any input type). #}
+<ui-heading level="1">{{ title }}</ui-heading>
+{% if intro %}<ui-text>{{ intro }}</ui-text>{% endif %}
+<ui-form data-action="{{ action or "submit" }}">
+{% for f in fields %}{% if f.type == "select" %}<ui-select name="{{ f.name }}" label="{{ f.label or f.name }}">{% for o in f.options %}{% if o is mapping %}<option value="{{ o.value }}">{{ o.label or o.value }}</option>{% else %}<option value="{{ o }}">{{ o }}</option>{% endif %}{% endfor %}</ui-select>
+{% elif f.type == "checkbox" %}<ui-checkbox name="{{ f.name }}"{% if f.checked %} checked{% endif %}>{{ f.label or f.name }}</ui-checkbox>
+{% else %}<ui-input name="{{ f.name }}" label="{{ f.label or f.name }}" type="{{ f.type or "text" }}"{% if f.placeholder %} placeholder="{{ f.placeholder }}"{% endif %}></ui-input>
+{% endif %}{% endfor %}{% if submit %}<ui-button>{{ submit }}</ui-button>{% endif %}
+</ui-form>
+{% include "nav" %}

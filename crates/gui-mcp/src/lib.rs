@@ -5,6 +5,7 @@
 //! [`gui_agent::Workspace`]; [`run_stdio`] runs it over stdio. The tool methods are public
 //! so they can be unit-tested directly without standing up the transport.
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 use base64::Engine as _;
@@ -17,7 +18,10 @@ use rmcp::{
     transport::stdio,
     ErrorData, ServerHandler, ServiceExt,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+
+mod templates;
+pub use templates::{TemplateInfo, Templates};
 
 /// Help text describing the `<ui-*>` components an agent can compose.
 pub const COMPONENT_HELP: &str = include_str!("component_help.txt");
@@ -32,7 +36,7 @@ fn ok_json(v: serde_json::Value) -> Result<CallToolResult, ErrorData> {
     Ok(CallToolResult::success(vec![Content::text(v.to_string())]))
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct NavParam {
     /// Target surface slug in the same deck.
     pub to: String,
@@ -52,8 +56,13 @@ pub struct PublishParams {
     pub alt_text: String,
     /// The surface body as HTML. Use the `<ui-*>` components (call `component_help`); plain
     /// HTML elements (`button`, `h1`-`h3`, `p`, `form`, `select`, `a[data-to]`) are
-    /// live-rewritten into the equivalent components in the browser.
-    pub html: String,
+    /// live-rewritten into the equivalent components in the browser. Give this or `template`.
+    pub html: Option<String>,
+    /// Render the body from a template (see `list_templates`) instead of writing `html`.
+    pub template: Option<String>,
+    /// The template's slot values as a JSON **string** (a JSON object). `title` and `nav`
+    /// are filled in from this call unless given.
+    pub data_json: Option<String>,
     /// Navigation edges to sibling surfaces.
     pub nav: Option<Vec<NavParam>>,
     /// Sandboxed handlers that run on matching backflow actions (server must run with
@@ -158,6 +167,49 @@ pub struct DeleteBackflowParams {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ScaffoldSurface {
+    /// Surface slug.
+    pub surface: String,
+    pub title: String,
+    /// One line on what this surface is for (the `purpose` slot; default alt text).
+    pub purpose: Option<String>,
+    /// Template to render (default `skeleton`).
+    pub template: Option<String>,
+    /// Slot values as a JSON **string** (a JSON object).
+    pub data_json: Option<String>,
+    /// Navigation edges to other surfaces (the `nav` slot).
+    pub links: Option<Vec<NavParam>>,
+    pub alt_text: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ScaffoldParams {
+    pub agent: String,
+    /// Deck slug; defaults to `main`.
+    pub deck: Option<String>,
+    /// Deck display name.
+    pub name: Option<String>,
+    /// Entry surface slug (default: the first surface).
+    pub entry: Option<String>,
+    /// The deck's surfaces, in navigation order.
+    pub surfaces: Vec<ScaffoldSurface>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct TemplateNameParams {
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SaveTemplateParams {
+    /// Template name (lowercase slug); a built-in of the same name is shadowed.
+    pub name: String,
+    /// minijinja (Jinja2) HTML. Start with a `{# description and slots #}` comment;
+    /// `{% include "nav" %}` renders the links; output is HTML-escaped.
+    pub source: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ReadDeckParams {
     pub agent: String,
     pub deck: String,
@@ -174,9 +226,29 @@ pub struct ReadSurfaceParams {
 #[derive(Clone)]
 pub struct GuiServer {
     workspace: Workspace,
+    templates: Templates,
     // Read by the #[tool_handler] macro; rustc's dead-code pass doesn't see that.
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
+}
+
+/// Template context: the `data_json` object plus `title`, `nav` (and `purpose`) unless set.
+fn template_ctx(
+    data_json: Option<&str>,
+    title: &str,
+    nav: &[NavParam],
+    purpose: Option<&str>,
+) -> Result<serde_json::Value, ErrorData> {
+    let mut ctx: serde_json::Map<String, serde_json::Value> = match data_json {
+        Some(s) => serde_json::from_str(s).map_err(|e| invalid(format!("invalid data_json: {e}")))?,
+        None => serde_json::Map::new(),
+    };
+    ctx.entry("title").or_insert(title.into());
+    ctx.entry("nav").or_insert(serde_json::json!(nav));
+    if let Some(p) = purpose {
+        ctx.entry("purpose").or_insert(p.into());
+    }
+    Ok(serde_json::Value::Object(ctx))
 }
 
 fn surface_path(agent: &str, deck: &Option<String>, surface: &str) -> Result<SurfacePath, ErrorData> {
@@ -189,8 +261,19 @@ impl GuiServer {
     pub fn new(workspace: Workspace) -> Self {
         Self {
             workspace,
+            templates: Templates::default(),
             tool_router: Self::tool_router(),
         }
+    }
+
+    /// Directory for model-authored templates (`save_template` writes there).
+    pub fn with_templates_dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.templates = Templates::new(Some(dir.into()));
+        self
+    }
+
+    fn render(&self, template: &str, ctx: &serde_json::Value) -> Result<String, ErrorData> {
+        self.templates.render(template, ctx).map_err(|e| invalid(format!("{e:#}")))
     }
 
     #[tool(
@@ -202,8 +285,14 @@ impl GuiServer {
     ) -> Result<CallToolResult, ErrorData> {
         let path = surface_path(&p.agent, &p.deck, &p.surface)?;
         tracing::info!(surface = %path.id(), "tool: publish_surface");
-        let mut b = SurfaceBuilder::new(p.title, p.alt_text).html(p.html);
-        for edge in p.nav.unwrap_or_default() {
+        let nav = p.nav.unwrap_or_default();
+        let html = match (p.html, p.template) {
+            (Some(html), None) => html,
+            (None, Some(t)) => self.render(&t, &template_ctx(p.data_json.as_deref(), &p.title, &nav, None)?)?,
+            _ => return Err(invalid("give exactly one of `html` or `template`")),
+        };
+        let mut b = SurfaceBuilder::new(p.title, p.alt_text).html(html);
+        for edge in nav {
             b = b.nav(edge.to, edge.label.as_deref());
         }
         for h in p.handlers.unwrap_or_default() {
@@ -396,6 +485,81 @@ impl GuiServer {
         }))
     }
 
+    #[tool(
+        description = "Scaffold a whole deck in one call: publish every surface from a template (default `skeleton`: title, purpose, placeholder sections, links) and wire the deck (order as given, entry = first). The user can click through it at once; then fill each surface with publish_surface (a newer version replaces the skeleton). All surfaces render before anything is written."
+    )]
+    pub async fn scaffold_deck(
+        &self,
+        Parameters(p): Parameters<ScaffoldParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if p.surfaces.is_empty() {
+            return Err(invalid("scaffold_deck needs at least one surface"));
+        }
+        let deck = p.deck.unwrap_or_else(|| DEFAULT_DECK.to_string());
+        let mut built = Vec::new();
+        for s in &p.surfaces {
+            let path = surface_path(&p.agent, &Some(deck.clone()), &s.surface)?;
+            let links = s.links.clone().unwrap_or_default();
+            let ctx = template_ctx(s.data_json.as_deref(), &s.title, &links, s.purpose.as_deref())?;
+            let html = self.render(s.template.as_deref().unwrap_or("skeleton"), &ctx)?;
+            let alt = s.alt_text.clone().or_else(|| s.purpose.clone()).unwrap_or_else(|| s.title.clone());
+            let mut b = SurfaceBuilder::new(s.title.clone(), alt).html(html);
+            for l in links {
+                b = b.nav(l.to, l.label.as_deref());
+            }
+            built.push((path, b));
+        }
+        tracing::info!(agent = %p.agent, %deck, surfaces = built.len(), "tool: scaffold_deck");
+        let mut published = Vec::new();
+        for (path, b) in &built {
+            let version = self.workspace.publish(path, b).map_err(|e| internal(e.to_string()))?;
+            published.push(serde_json::json!({
+                "surface": path.id(), "version": version.to_string(), "url": path.url(),
+            }));
+        }
+        let order: Vec<String> = p.surfaces.iter().map(|s| s.surface.clone()).collect();
+        let manifest = DeckManifest {
+            name: p.name,
+            entry: Some(p.entry.unwrap_or_else(|| order[0].clone())),
+            order,
+        };
+        self.workspace
+            .define_deck(&p.agent, &deck, &manifest)
+            .map_err(|e| invalid(e.to_string()))?;
+        ok_json(serde_json::json!({ "ok": true, "deck": format!("{}/{deck}", p.agent), "surfaces": published }))
+    }
+
+    #[tool(
+        description = "List surface templates (built-in and your own) with their slots. Render one via publish_surface `template` + `data_json`, or as scaffold_deck surfaces."
+    )]
+    pub async fn list_templates(&self) -> Result<CallToolResult, ErrorData> {
+        let list = self.templates.list().map_err(|e| internal(format!("{e:#}")))?;
+        ok_json(serde_json::json!({ "templates": list }))
+    }
+
+    #[tool(description = "Read a template's source, e.g. to adapt it into your own with save_template.")]
+    pub async fn read_template(
+        &self,
+        Parameters(p): Parameters<TemplateNameParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        match self.templates.read(&p.name).map_err(|e| internal(format!("{e:#}")))? {
+            Some((src, source)) => ok_json(serde_json::json!({ "name": p.name, "source": source, "template": src })),
+            None => Err(invalid(format!("no template {:?}", p.name))),
+        }
+    }
+
+    #[tool(
+        description = "Save your own reusable surface template (minijinja/Jinja2 HTML with <ui-*> components; slots are variables, values are HTML-escaped, `| tojson` for data-value). Templates can {% include %} / {% extends %} each other by name. Start it with a {# description + slots #} comment; list_templates shows it."
+    )]
+    pub async fn save_template(
+        &self,
+        Parameters(p): Parameters<SaveTemplateParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let path = self.templates.save(&p.name, &p.source).map_err(|e| invalid(format!("{e:#}")))?;
+        tracing::info!(template = %p.name, path = %path.display(), "tool: save_template");
+        ok_json(serde_json::json!({ "ok": true, "name": p.name, "path": path.display().to_string() }))
+    }
+
     #[tool(description = "Reference for the <ui-*> components available when composing a surface.")]
     pub async fn component_help(&self) -> Result<CallToolResult, ErrorData> {
         Ok(CallToolResult::success(vec![Content::text(COMPONENT_HELP)]))
@@ -411,6 +575,9 @@ impl ServerHandler for GuiServer {
             "Author interactive UI surfaces for users and react to their input. \
              publish_surface creates/regenerates a surface (latest-wins); define_deck \
              wires navigation; wait_for_backflow blocks until the user interacts. \
+             For speed: scaffold_deck publishes a whole navigable deck of skeletons in one \
+             call, and publish_surface can render a template (list_templates) from slot \
+             data instead of full HTML; save_template stores your own reusable ones. \
              Call component_help for the component reference."
                 .into(),
         );
@@ -425,8 +592,8 @@ impl ServerHandler for GuiServer {
 }
 
 /// Run the MCP server over stdio until the client disconnects.
-pub async fn run_stdio(workspace: Workspace) -> anyhow::Result<()> {
-    let service = GuiServer::new(workspace).serve(stdio()).await?;
+pub async fn run_stdio(server: GuiServer) -> anyhow::Result<()> {
+    let service = server.serve(stdio()).await?;
     service.waiting().await?;
     Ok(())
 }

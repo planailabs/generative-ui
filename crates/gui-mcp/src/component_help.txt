@@ -20,6 +20,12 @@ Translation note: you may also write ordinary HTML — `<h1>`/`<h2>`/`<h3>`, `<p
 `<ui-*>` components in the browser (so they get styling + backflow wiring). Prefer the `<ui-*>`
 components directly; the plain-HTML translation is a convenience.
 
+Templates (faster than writing html): publish_surface `template` + `data_json` renders a
+template from slot values; scaffold_deck publishes a whole linked deck of them in one call.
+list_templates shows the slots (built-ins: skeleton, form, list, dashboard, partial nav);
+save_template stores your own minijinja (Jinja2) template — {% include "nav" %},
+{% extends "name" %}, values HTML-escaped, `| tojson` for data-value.
+
 Interaction flows back via wait_for_backflow / list_backflow:
   - a button yields { action, value }
   - a form yields  { action: "<form action>", value: { field: value, ... } }
