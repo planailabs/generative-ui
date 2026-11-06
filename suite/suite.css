@@ -88,8 +88,8 @@ body {
   max-width: 880px;
   margin-inline: auto;
 }
-.gui-embedded .gui-surface, .gui-embedded body { padding: 16px; max-width: none; }
-.gui-embedded body { background: transparent; }
+.gui-embedded body { padding: 0; background: transparent; }
+.gui-embedded .gui-surface { padding: 16px 20px; max-width: none; }
 
 /* ── Chrome (inspector / agent pages) ─────────────────────────────── */
 .gui-topbar {
@@ -180,7 +180,7 @@ ui-grid {
   margin: 0 0 var(--gap);
 }
 ui-grid > * { margin-bottom: 0; }
-@media (max-width: 560px) { ui-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 420px) { ui-grid { grid-template-columns: minmax(0, 1fr); } }
 
 .ui-btn {
   font: inherit;
