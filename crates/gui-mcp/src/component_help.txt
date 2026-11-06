@@ -15,6 +15,26 @@ field, composing these `<ui-*>` elements:
 <ui-link to="surface-slug">Label</ui-link>   Navigates to a sibling surface in the deck.
 <ui-deck-nav></ui-deck-nav>                  Prev/next navigation chrome for the deck.
 
+Data and layout:
+<ui-grid cols="3"> ...elements... </ui-grid>   Equal columns (one column on phones).
+<ui-stat label="Revenue" value="12.4k" delta="+8% vs May" trend="up|down"></ui-stat>
+<ui-badge tone="success|danger|warning|info">Live</ui-badge>
+<ui-callout tone="info|success|warning|danger" title="Heads up">Body</ui-callout>
+<ui-code>preformatted text</ui-code>         (or plain <pre>/<code>)
+<ui-table columns='["Name","Visits"]' rows='[["Home",120],["Docs",48]]'></ui-table>
+<ui-table data='[{"name":"Home","visits":120}]'></ui-table>   (or a plain <table>)
+    Numeric columns align right.
+<ui-tabs><ui-tab label="Overview">...</ui-tab><ui-tab label="Details">...</ui-tab></ui-tabs>
+<ui-chart type="line|area|bar" title="Requests" stacked height="220"
+          data='{"labels":["Mon","Tue"],"series":[{"name":"api","values":[3,5]}]}'></ui-chart>
+    Also data='[{"label":"Mon","value":3}]' or '{"labels":[…],"values":[…]}'. null = a gap.
+<ui-button variant="secondary|danger" ...>  Button styles (default: the accent colour).
+
+Styling: everything uses CSS variables with the MCP Apps standard names
+(--color-background-primary/secondary/tertiary, --color-text-primary/secondary,
+--color-border-primary, --color-accent, --font-sans, --font-mono, --border-radius-md, …) and
+follows light/dark automatically. Use them in your own CSS instead of fixed colours.
+
 Translation note: you may also write ordinary HTML — `<h1>`/`<h2>`/`<h3>`, `<p>`, `<button>`,
 `<form>`, `<select>`, and `<a data-to="slug">` are automatically rewritten into the matching
 `<ui-*>` components in the browser (so they get styling + backflow wiring). Prefer the `<ui-*>`
@@ -31,6 +51,11 @@ the browser gets live; its latest value is in the KV view as stream.{name}, so b
   <ui-text><span data-kv="stream.progress.pct">0</span>% — <span data-kv="stream.progress.label"></span></ui-text>
 A handler's public host.emit(name, data) streams the same way. Custom JS can listen with
 document.addEventListener("ui-stream", e => e.detail /* {surface, name, value} */).
+
+Scripting (window.gui): your own <script> can call gui.backflow(action, value), gui.kv(),
+gui.onKv(kv => …). Embedded in a host (the plan.ai chat, an MCP Apps host) it can also call
+gui.callTool(name, args), gui.sendMessage(text), gui.updateContext(data, text) and
+gui.openLink(url); served by gui-server these reject.
 
 Interaction flows back via wait_for_backflow / list_backflow:
   - a button yields { action, value }

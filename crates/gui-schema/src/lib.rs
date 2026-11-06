@@ -561,6 +561,61 @@ pub enum Component {
         label: Option<String>,
     },
     DeckNav,
+    /// One key figure: label, value, an optional delta and its trend (`up`/`down`).
+    Stat {
+        label: String,
+        value: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        delta: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        trend: Option<String>,
+    },
+    /// A small status label; tone: success, danger, warning, info.
+    Badge {
+        text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tone: Option<String>,
+    },
+    /// A highlighted note; tone as for badges.
+    Callout {
+        text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tone: Option<String>,
+    },
+    /// Preformatted code or output.
+    Code {
+        text: String,
+    },
+    /// A table: column headers and rows of cells (numbers align right).
+    Table {
+        columns: Vec<String>,
+        #[serde(default)]
+        rows: Vec<Vec<serde_json::Value>>,
+    },
+    /// Tabbed panels.
+    Tabs {
+        tabs: Vec<Tab>,
+    },
+    /// An SVG chart: `chart_type` line, area or bar; `data` is
+    /// `{labels: [...], series: [{name, values: [...]}]}`.
+    Chart {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        chart_type: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        #[serde(default)]
+        stacked: bool,
+        data: serde_json::Value,
+    },
+    /// Equal columns (stacked on narrow screens).
+    Grid {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cols: Option<u8>,
+        #[serde(default)]
+        children: Vec<Component>,
+    },
     /// Raw HTML escape hatch — passed through verbatim (author's responsibility).
     Html {
         html: String,
@@ -573,6 +628,14 @@ pub struct SelectOption {
     pub value: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, schemars::JsonSchema, Clone, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Tab {
+    pub label: String,
+    #[serde(default)]
+    pub children: Vec<Component>,
 }
 
 /// Escape text for use in HTML element bodies and double-quoted attribute values.
@@ -691,6 +754,57 @@ impl Component {
                 )
             }
             Component::DeckNav => "<ui-deck-nav></ui-deck-nav>".to_string(),
+            Component::Stat { label, value, delta, trend } => {
+                let mut a = attr("label", label) + &attr("value", value);
+                if let Some(d) = delta {
+                    a.push_str(&attr("delta", d));
+                }
+                if let Some(t) = trend {
+                    a.push_str(&attr("trend", t));
+                }
+                format!("<ui-stat{a}></ui-stat>")
+            }
+            Component::Badge { text, tone } => {
+                let a = tone.as_deref().map(|t| attr("tone", t)).unwrap_or_default();
+                format!("<ui-badge{a}>{}</ui-badge>", esc(text))
+            }
+            Component::Callout { text, title, tone } => {
+                let mut a = String::new();
+                if let Some(t) = title {
+                    a.push_str(&attr("title", t));
+                }
+                if let Some(t) = tone {
+                    a.push_str(&attr("tone", t));
+                }
+                format!("<ui-callout{a}>{}</ui-callout>", esc(text))
+            }
+            Component::Code { text } => format!("<ui-code>{}</ui-code>", esc(text)),
+            Component::Table { columns, rows } => format!(
+                "<ui-table{}{}></ui-table>",
+                attr("columns", &serde_json::Value::from(columns.clone()).to_string()),
+                attr("rows", &serde_json::to_string(rows).unwrap_or_else(|_| "[]".into()))
+            ),
+            Component::Tabs { tabs } => {
+                let inner: String = tabs
+                    .iter()
+                    .map(|t| format!("<ui-tab{}>{}</ui-tab>", attr("label", &t.label), render_all(&t.children)))
+                    .collect();
+                format!("<ui-tabs>{inner}</ui-tabs>")
+            }
+            Component::Chart { chart_type, title, stacked, data } => {
+                let mut a = attr("type", chart_type.as_deref().unwrap_or("line"));
+                if let Some(t) = title {
+                    a.push_str(&attr("title", t));
+                }
+                if *stacked {
+                    a.push_str(" stacked");
+                }
+                a.push_str(&attr("data", &data.to_string()));
+                format!("<ui-chart{a}></ui-chart>")
+            }
+            Component::Grid { cols, children } => {
+                format!("<ui-grid{}>{}</ui-grid>", attr("cols", &cols.unwrap_or(2).to_string()), render_all(children))
+            }
             Component::Html { html } => html.clone(),
         }
     }
@@ -875,6 +989,22 @@ mod tests {
     #[test]
     fn esc_escapes_all() {
         assert_eq!(esc(r#"<a href="x">&'"#), "&lt;a href=&quot;x&quot;&gt;&amp;&#39;");
+    }
+
+    #[test]
+    fn data_components_render_escaped_attributes() {
+        let stat = Component::Stat { label: "Revenue".into(), value: "12k".into(), delta: Some("+8%".into()), trend: Some("up".into()) };
+        assert_eq!(stat.render(), r#"<ui-stat label="Revenue" value="12k" delta="+8%" trend="up"></ui-stat>"#);
+        let table = Component::Table { columns: vec!["a".into(), "b".into()], rows: vec![vec![json!("<x>"), json!(1)]] };
+        assert_eq!(table.render(), r#"<ui-table columns="[&quot;a&quot;,&quot;b&quot;]" rows="[[&quot;&lt;x&gt;&quot;,1]]"></ui-table>"#);
+        let chart = Component::Chart { chart_type: Some("bar".into()), title: None, stacked: true, data: json!({"values": [1, 2]}) };
+        assert_eq!(chart.render(), r#"<ui-chart type="bar" stacked data="{&quot;values&quot;:[1,2]}"></ui-chart>"#);
+        let tabs = Component::Tabs { tabs: vec![Tab { label: "A".into(), children: vec![Component::Code { text: "a<b".into() }] }] };
+        assert_eq!(tabs.render(), r#"<ui-tabs><ui-tab label="A"><ui-code>a&lt;b</ui-code></ui-tab></ui-tabs>"#);
+        let grid = Component::Grid { cols: Some(3), children: vec![Component::Badge { text: "ok".into(), tone: Some("success".into()) }] };
+        assert_eq!(grid.render(), r#"<ui-grid cols="3"><ui-badge tone="success">ok</ui-badge></ui-grid>"#);
+        let callout = Component::Callout { text: "t".into(), title: Some("T".into()), tone: None };
+        assert_eq!(callout.render(), r#"<ui-callout title="T">t</ui-callout>"#);
     }
 
     #[test]

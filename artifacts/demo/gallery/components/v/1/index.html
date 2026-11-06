@@ -1,0 +1,30 @@
+<ui-heading level="1">Components</ui-heading>
+<ui-text>Every suite component, in the plan.ai chat's design. <ui-badge tone="info">gallery</ui-badge></ui-text>
+<ui-grid cols="3">
+  <ui-stat label="Requests" value="12.4k" delta="+8% vs last week" trend="up"></ui-stat>
+  <ui-stat label="Errors" value="0.4%" delta="+0.1 pt" trend="down"></ui-stat>
+  <ui-stat label="Latency p95" value="182 ms"></ui-stat>
+</ui-grid>
+<ui-tabs>
+  <ui-tab label="Line">
+    <ui-chart type="line" title="Requests per day" data='{"labels":["Mon","Tue","Wed","Thu","Fri","Sat","Sun"],"series":[{"name":"api","values":[320,410,380,520,610,290,240]},{"name":"web","values":[210,260,null,300,340,180,150]}]}'></ui-chart>
+  </ui-tab>
+  <ui-tab label="Bars">
+    <ui-chart type="bar" stacked title="Deploys" data='{"labels":["W1","W2","W3","W4"],"series":[{"name":"ok","values":[12,15,9,18]},{"name":"failed","values":[1,0,3,1]}]}'></ui-chart>
+  </ui-tab>
+  <ui-tab label="Area">
+    <ui-chart type="area" title="Memory" data='[{"label":"00","value":2.1},{"label":"06","value":2.4},{"label":"12","value":3.8},{"label":"18","value":3.1}]'></ui-chart>
+  </ui-tab>
+</ui-tabs>
+<ui-table columns='["Service","Status","Calls"]' rows='[["mgmt","up",1204],["vpn","up",88],["redream","degraded",12]]'></ui-table>
+<ui-callout tone="warning" title="Heads up">redream answers slowly since 14:00.</ui-callout>
+<ui-code>$ subnet apply chat.hcl
+applied 4 changes</ui-code>
+<ui-card>
+  <ui-form data-action="save">
+    <ui-input name="name" label="Name" placeholder="Ada"></ui-input>
+    <ui-select name="plan" label="Plan"><option value="standard">Standard</option><option value="pro">Pro</option></ui-select>
+    <ui-checkbox name="newsletter">Newsletter</ui-checkbox>
+    <ui-button>Save</ui-button> <ui-button variant="secondary" data-action="cancel">Cancel</ui-button>
+  </ui-form>
+</ui-card>
