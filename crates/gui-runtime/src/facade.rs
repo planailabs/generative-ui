@@ -191,12 +191,12 @@ leaf!(FsList, "list", "fs.list", op!(P::strdef("prefix", "")), |h, a| h
 
 leaf!(Log, "log", "log", op!(P::str("level"), P::str("message")), |h, a| {
     let level = a.get("level").and_then(|v| v.as_str()).unwrap_or("info");
-    h.log(level, str_arg(a, "message").unwrap_or(""));
+    h.log(level, str_arg(a, "message").unwrap_or(""))?;
     Ok(Value::Null)
 });
 
 fn do_emit(h: &mut Host, a: &Value) -> Result<Value, HostError> {
-    h.emit(scope_arg(a), str_arg(a, "name")?, arg(a, "data"));
+    h.emit(scope_arg(a), str_arg(a, "name")?, arg(a, "data"))?;
     Ok(Value::Null)
 }
 leaf!(

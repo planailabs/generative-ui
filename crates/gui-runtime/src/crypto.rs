@@ -22,7 +22,8 @@ use crate::host::HostError;
 // ponytail: fixed ceilings — these are single blocking calls the wall-clock interrupt can't
 // preempt, so bound the inputs. Lift into `Limits` if a handler ever legitimately needs more.
 const MAX_RANDOM_BYTES: usize = 1024 * 1024;
-const MAX_PBKDF2_ITERS: u64 = 10_000_000;
+// A single native call the time limit can't interrupt: keep it to well under a second.
+const MAX_PBKDF2_ITERS: u64 = 1_000_000;
 const MAX_PBKDF2_LEN: usize = 1024;
 
 /// Route a `crypto.*` op. Called from [`Host::dispatch`](crate::host::Host::dispatch).

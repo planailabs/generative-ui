@@ -134,11 +134,11 @@ impl Host {
         fs::list(&self.state_dir, prefix)
     }
 
-    pub fn emit(&mut self, scope: Scope, name: &str, data: Value) {
-        self.events.emit(scope, name, data);
+    pub fn emit(&mut self, scope: Scope, name: &str, data: Value) -> Result<(), HostError> {
+        self.events.emit(scope, name, data)
     }
-    pub fn log(&mut self, level: &str, message: &str) {
-        self.events.log(level, message);
+    pub fn log(&mut self, level: &str, message: &str) -> Result<(), HostError> {
+        self.events.log(level, message)
     }
     pub fn set_response(&mut self, status: u16, body: Value) {
         self.events.set_response(status, body);
