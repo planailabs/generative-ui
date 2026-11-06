@@ -366,6 +366,7 @@ pub fn find_op<'a>(node: &'a dyn Node, op: &str) -> Option<&'a dyn Node> {
 #[derive(Clone, Copy, PartialEq)]
 enum Lang {
     Js,
+    #[cfg_attr(not(feature = "lua"), allow(dead_code))]
     Lua,
 }
 
@@ -383,6 +384,7 @@ JSON.parse(__host_call(op, JSON.stringify(args || {{}})));\n  return {{\n{body}\
 
 /// The Lua `host` table, generated from the tree once. `__host_call`/`__encode`/`__decode` are
 /// bound in Rust by the Lua engine; this defines `__c`/`__merge` and returns the table.
+#[cfg_attr(not(feature = "lua"), allow(dead_code))]
 pub fn lua_prelude() -> &'static str {
     static P: OnceLock<String> = OnceLock::new();
     P.get_or_init(|| {
